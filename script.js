@@ -137,6 +137,31 @@ function createModalField(field) {
   const label = document.createElement('label');
   label.textContent = field.label;
 
+  if (field.type === 'checkbox-group') {
+    const group = document.createElement('div');
+    group.className = 'ui-checkbox-group';
+    (field.options || []).forEach((option) => {
+      const optionLabel = document.createElement('label');
+      optionLabel.className = 'ui-checkbox-option';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.name = field.name;
+      checkbox.value = option.value;
+      checkbox.checked = Boolean(option.checked);
+
+      const text = document.createElement('span');
+      text.textContent = option.label;
+
+      optionLabel.appendChild(checkbox);
+      optionLabel.appendChild(text);
+      group.appendChild(optionLabel);
+    });
+
+    label.appendChild(group);
+    return label;
+  }
+
   const control = field.type === 'textarea' ? document.createElement('textarea') : document.createElement('input');
   control.name = field.name;
   control.value = field.value || '';
@@ -197,6 +222,12 @@ function showModal({
     uiModalConfirmBtn.onclick = () => {
       const values = {};
       fields.forEach((field) => {
+        if (field.type === 'checkbox-group') {
+          const checked = uiModalForm.querySelectorAll(`input[name="${field.name}"]:checked`);
+          values[field.name] = Array.from(checked).map((item) => item.value);
+          return;
+        }
+
         const input = uiModalForm.elements.namedItem(field.name);
         values[field.name] = input ? String(input.value) : '';
       });
@@ -266,6 +297,42 @@ async function uiPrompt(message, defaultValue = '', options = {}) {
 
   if (!result.confirmed) return null;
   return result.values.value;
+}
+
+function getAssignableEmployees() {
+  return (store.employees || [])
+    .filter((entry) => entry.role === 'employee')
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+async function uiSelectEmployees(currentSelection = []) {
+  const employees = getAssignableEmployees();
+  if (!employees.length) {
+    await uiAlert('No active employees available to assign.');
+    return null;
+  }
+
+  const selectedNames = new Set((currentSelection || []).map((name) => String(name)));
+  const result = await showModal({
+    title: 'Assign Employees',
+    message: 'Select one or more employees for this cleaning.',
+    confirmText: 'Save Assignment',
+    fields: [
+      {
+        name: 'employees',
+        label: 'Employees',
+        type: 'checkbox-group',
+        options: employees.map((employee) => ({
+          value: employee.name,
+          label: employee.name,
+          checked: selectedNames.has(employee.name)
+        }))
+      }
+    ]
+  });
+
+  if (!result.confirmed) return null;
+  return result.values.employees || [];
 }
 
 function getAllBookings() {
@@ -1114,15 +1181,13 @@ document.addEventListener('click', async (event) => {
     if (action === 'assign-booking') {
       const type = actionElement.dataset.type;
       if (!type) return;
-
-      const employeesInput = await uiPrompt('Assign employees (comma-separated):', '', {
-        label: 'Employees'
-      });
-      if (employeesInput === null) return;
+      const booking = getAllBookings().find((entry) => entry.id === id && entry.type === type);
+      const selectedEmployees = await uiSelectEmployees(booking?.assignedEmployees || []);
+      if (selectedEmployees === null) return;
 
       await api(`/api/house-office-schedule/${type}/${id}/assignment`, {
         method: 'PATCH',
-        body: JSON.stringify({ assignedEmployees: parseCommaList(employeesInput) })
+        body: JSON.stringify({ assignedEmployees: selectedEmployees })
       });
     }
 

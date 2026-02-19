@@ -173,6 +173,24 @@
       "hours": 7.5,
       "notes": "Field cleanup",
       "clockedAt": "2026-02-19T01:51:37.964Z"
+    },
+    {
+      "id": "time-afeb4c5b-7111-4879-8a30-12ecc6fee7c8",
+      "userId": "user-13573190-5720-4182-b569-382263b5c7c6",
+      "employeeName": "Maria G Ayllon",
+      "date": "2026-02-19",
+      "hours": 10,
+      "notes": "",
+      "clockedAt": "2026-02-19T14:15:49.375Z"
+    },
+    {
+      "id": "time-364ef08c-9491-4b70-a1bf-db4d21b981c3",
+      "userId": "user-13573190-5720-4182-b569-382263b5c7c6",
+      "employeeName": "Maria G Ayllon",
+      "date": "2026-02-19",
+      "hours": 0.25,
+      "notes": "",
+      "clockedAt": "2026-02-19T14:43:29.008Z"
     }
   ],
   "archived": {
@@ -199,6 +217,16 @@
       "passwordHash": "a106034a897d24ae62a602d28950a3d95c04c6e91545a70cf792812cc28db2d623e58f8ba25b939b8db1b158744bd0f3c0d2bae48a858a26f63f971dbac3b117",
       "active": true,
       "createdAt": "2026-02-19T01:51:37.873Z"
+    },
+    {
+      "id": "user-13573190-5720-4182-b569-382263b5c7c6",
+      "username": "MariaG",
+      "name": "Maria G Ayllon",
+      "role": "employee",
+      "salt": "748fd19006894b76ba14bd3eece91616",
+      "passwordHash": "bbe8555fa1fac89f43e7e0b0d93c75da9ae8de3d62cecb7d10652e7bb0bf455253ca053dbebcc09d38bbdc7d995f2f96c796e7361271a23be9095c5e7a1dd4be",
+      "active": true,
+      "createdAt": "2026-02-19T14:15:20.032Z"
     }
   ]
 }
