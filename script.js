@@ -41,6 +41,12 @@ const clockHoursInput = document.getElementById('clock-hours');
 const clockNotesInput = document.getElementById('clock-notes');
 const exportTimesheetsBtn = document.getElementById('export-timesheets-btn');
 const timesheetTableBody = document.getElementById('timesheet-table-body');
+const uiModal = document.getElementById('ui-modal');
+const uiModalTitle = document.getElementById('ui-modal-title');
+const uiModalMessage = document.getElementById('ui-modal-message');
+const uiModalForm = document.getElementById('ui-modal-form');
+const uiModalCancelBtn = document.getElementById('ui-modal-cancel');
+const uiModalConfirmBtn = document.getElementById('ui-modal-confirm');
 
 const adminOnlyElements = document.querySelectorAll('.admin-only');
 const adminOnlyTabs = document.querySelectorAll('[data-admin-only="true"]');
@@ -58,6 +64,7 @@ let currentUser = null;
 let calendarCursor = new Date();
 let selectedDateKey = toDateKey(new Date());
 let clientSearchTerm = '';
+let activeModalResolver = null;
 
 function escapeHtml(value) {
   return String(value)
@@ -124,6 +131,141 @@ function parseCommaList(value) {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function createModalField(field) {
+  const label = document.createElement('label');
+  label.textContent = field.label;
+
+  const control = field.type === 'textarea' ? document.createElement('textarea') : document.createElement('input');
+  control.name = field.name;
+  control.value = field.value || '';
+  control.placeholder = field.placeholder || '';
+  if (field.type && field.type !== 'textarea') {
+    control.type = field.type;
+  }
+
+  label.appendChild(control);
+  return label;
+}
+
+function closeModal(result) {
+  uiModal.classList.add('hidden');
+  uiModalForm.innerHTML = '';
+  uiModalForm.onkeydown = null;
+  uiModalConfirmBtn.textContent = 'Continue';
+  uiModalCancelBtn.textContent = 'Cancel';
+  uiModalCancelBtn.classList.remove('hidden');
+  document.removeEventListener('keydown', onModalKeydown);
+
+  if (activeModalResolver) {
+    activeModalResolver(result);
+    activeModalResolver = null;
+  }
+}
+
+function onModalKeydown(event) {
+  if (event.key === 'Escape' && !uiModal.classList.contains('hidden')) {
+    closeModal({ confirmed: false, values: {} });
+  }
+}
+
+function showModal({
+  title,
+  message,
+  fields = [],
+  confirmText = 'Continue',
+  cancelText = 'Cancel',
+  showCancel = true
+}) {
+  return new Promise((resolve) => {
+    activeModalResolver = resolve;
+
+    uiModalTitle.textContent = title;
+    uiModalMessage.textContent = message || '';
+    uiModalForm.innerHTML = '';
+    fields.forEach((field) => {
+      uiModalForm.appendChild(createModalField(field));
+    });
+
+    uiModalConfirmBtn.textContent = confirmText;
+    uiModalCancelBtn.textContent = cancelText;
+    uiModalCancelBtn.classList.toggle('hidden', !showCancel);
+    uiModal.classList.remove('hidden');
+
+    uiModalCancelBtn.onclick = () => closeModal({ confirmed: false, values: {} });
+    uiModalConfirmBtn.onclick = () => {
+      const values = {};
+      fields.forEach((field) => {
+        const input = uiModalForm.elements.namedItem(field.name);
+        values[field.name] = input ? String(input.value) : '';
+      });
+      closeModal({ confirmed: true, values });
+    };
+
+    uiModal.onclick = (event) => {
+      if (event.target === uiModal) {
+        closeModal({ confirmed: false, values: {} });
+      }
+    };
+    uiModalForm.onkeydown = (event) => {
+      if (event.key === 'Enter' && !(event.target instanceof HTMLTextAreaElement)) {
+        event.preventDefault();
+        uiModalConfirmBtn.click();
+      }
+    };
+
+    document.addEventListener('keydown', onModalKeydown);
+    const firstInput = uiModalForm.querySelector('input, textarea, select');
+    if (firstInput) {
+      firstInput.focus();
+      if (firstInput instanceof HTMLInputElement || firstInput instanceof HTMLTextAreaElement) {
+        firstInput.select();
+      }
+    } else {
+      uiModalConfirmBtn.focus();
+    }
+  });
+}
+
+async function uiAlert(message, title = 'Notice') {
+  await showModal({
+    title,
+    message,
+    confirmText: 'OK',
+    showCancel: false
+  });
+}
+
+async function uiConfirm(message, title = 'Confirm') {
+  const result = await showModal({
+    title,
+    message,
+    confirmText: 'Yes',
+    cancelText: 'No'
+  });
+  return result.confirmed;
+}
+
+async function uiPrompt(message, defaultValue = '', options = {}) {
+  const result = await showModal({
+    title: options.title || 'Input Required',
+    message,
+    confirmText: options.confirmText || 'Save',
+    cancelText: options.cancelText || 'Cancel',
+    fields: [
+      {
+        name: 'value',
+        label: options.label || 'Value',
+        value: defaultValue,
+        placeholder: options.placeholder || '',
+        type: options.type || 'text'
+      }
+    ]
+  });
+
+  if (!result.confirmed) return null;
+  return result.values.value;
 }
 
 function getAllBookings() {
@@ -482,25 +624,34 @@ function renderAll() {
 }
 
 async function scheduleForClient(client) {
-  const shouldSchedule = window.prompt('Add booking for this client now? (yes/no)', 'yes');
+  const shouldSchedule = await uiPrompt('Add booking for this client now? (yes/no)', 'yes', {
+    label: 'Answer'
+  });
   if (!shouldSchedule || shouldSchedule.toLowerCase() !== 'yes') return;
 
   let keepAdding = true;
 
   while (keepAdding) {
-    const date = window.prompt('Booking date (YYYY-MM-DD):', selectedDateKey);
+    const date = await uiPrompt('Booking date (YYYY-MM-DD):', selectedDateKey, {
+      label: 'Date',
+      placeholder: 'YYYY-MM-DD'
+    });
     if (!date) return;
     if (!isDateKey(date)) {
-      window.alert('Date must be in YYYY-MM-DD format.');
+      await uiAlert('Date must be in YYYY-MM-DD format.');
       continue;
     }
 
-    const time = window.prompt('Booking time (e.g. 2:30 PM):');
+    const time = await uiPrompt('Booking time (e.g. 2:30 PM):', '', { label: 'Time' });
     if (!time) return;
-    const location = window.prompt('Location:', client.address || '');
+    const location = await uiPrompt('Location:', client.address || '', { label: 'Location' });
     if (!location) return;
-    const notes = window.prompt('Notes:', 'Routine') || 'Routine';
-    const assignedEmployees = parseCommaList(window.prompt('Assigned employees (comma-separated):', ''));
+    const notes = (await uiPrompt('Notes:', 'Routine', { label: 'Notes' })) || 'Routine';
+    const assignedEmployees = parseCommaList(
+      await uiPrompt('Assigned employees (comma-separated):', '', {
+        label: 'Employees'
+      })
+    );
 
     const type = client.type === 'office' ? 'offices' : 'houses';
 
@@ -517,7 +668,9 @@ async function scheduleForClient(client) {
     });
 
     selectedDateKey = date;
-    const again = window.prompt('Add another day/time for this client? (yes/no)', 'no');
+    const again = await uiPrompt('Add another day/time for this client? (yes/no)', 'no', {
+      label: 'Answer'
+    });
     keepAdding = !!again && again.toLowerCase() === 'yes';
   }
 }
@@ -525,15 +678,15 @@ async function scheduleForClient(client) {
 async function addClient() {
   if (!isAdmin()) return;
 
-  const name = window.prompt('Client name:');
+  const name = await uiPrompt('Client name:', '', { label: 'Name' });
   if (!name) return;
 
-  const type = window.prompt('Client type (house/office):', 'house') || 'house';
-  const phone = window.prompt('Phone (optional):', '') || '';
-  const email = window.prompt('Email (optional):', '') || '';
-  const address = window.prompt('Address (optional):', '') || '';
-  const notes = window.prompt('Notes (optional):', '') || '';
-  const weeklyRateRaw = window.prompt('Weekly invoice rate for cleaned visits:', '120') || '120';
+  const type = (await uiPrompt('Client type (house/office):', 'house', { label: 'Type' })) || 'house';
+  const phone = (await uiPrompt('Phone (optional):', '', { label: 'Phone' })) || '';
+  const email = (await uiPrompt('Email (optional):', '', { label: 'Email' })) || '';
+  const address = (await uiPrompt('Address (optional):', '', { label: 'Address' })) || '';
+  const notes = (await uiPrompt('Notes (optional):', '', { label: 'Notes' })) || '';
+  const weeklyRateRaw = (await uiPrompt('Weekly invoice rate for cleaned visits:', '120', { label: 'Weekly rate' })) || '120';
   const weeklyRate = Number(weeklyRateRaw) || 120;
 
   try {
@@ -545,20 +698,20 @@ async function addClient() {
     await scheduleForClient(client);
     await refresh();
   } catch (error) {
-    window.alert(error.message);
+    await uiAlert(error.message);
   }
 }
 
 async function addInventoryItem() {
   if (!isAdmin()) return;
 
-  const name = window.prompt('Item name:');
+  const name = await uiPrompt('Item name:', '', { label: 'Item name' });
   if (!name) return;
-  const inStock = window.prompt('In stock amount (number):');
+  const inStock = await uiPrompt('In stock amount (number):', '', { label: 'In stock', type: 'number' });
   if (inStock === null) return;
-  const minimum = window.prompt('Minimum amount (number):');
+  const minimum = await uiPrompt('Minimum amount (number):', '', { label: 'Minimum', type: 'number' });
   if (minimum === null) return;
-  const unit = window.prompt('Unit (e.g. bottles, units):') || 'units';
+  const unit = (await uiPrompt('Unit (e.g. bottles, units):', 'units', { label: 'Unit' })) || 'units';
 
   try {
     await api('/api/inventory', {
@@ -567,20 +720,23 @@ async function addInventoryItem() {
     });
     await refresh();
   } catch (error) {
-    window.alert(error.message);
+    await uiAlert(error.message);
   }
 }
 
 async function addShift() {
   if (!isAdmin()) return;
 
-  const date = window.prompt('Shift date (YYYY-MM-DD):', selectedDateKey);
+  const date = await uiPrompt('Shift date (YYYY-MM-DD):', selectedDateKey, {
+    label: 'Date',
+    placeholder: 'YYYY-MM-DD'
+  });
   if (!date) return;
-  const time = window.prompt('Shift time (e.g. 9:00 AM):');
+  const time = await uiPrompt('Shift time (e.g. 9:00 AM):', '', { label: 'Time' });
   if (!time) return;
-  const employee = window.prompt('Employee name(s):');
+  const employee = await uiPrompt('Employee name(s):', '', { label: 'Employee(s)' });
   if (!employee) return;
-  const details = window.prompt('Shift details:');
+  const details = await uiPrompt('Shift details:', '', { label: 'Details' });
   if (!details) return;
 
   try {
@@ -590,31 +746,41 @@ async function addShift() {
     });
     await refresh();
   } catch (error) {
-    window.alert(error.message);
+    await uiAlert(error.message);
   }
 }
 
 async function addBooking() {
   if (!isAdmin()) return;
 
-  const clientName = window.prompt('Client name (optional, exact match):', '');
+  const clientName = await uiPrompt('Client name (optional, exact match):', '', {
+    label: 'Client name'
+  });
   const matchedClient = findClientByName(clientName);
 
-  const typeRaw = window.prompt(
+  const typeRaw = await uiPrompt(
     `Booking type: house or office?${matchedClient ? ` (auto: ${matchedClient.type})` : ''}`,
-    matchedClient ? matchedClient.type : 'house'
+    matchedClient ? matchedClient.type : 'house',
+    { label: 'Booking type' }
   );
   if (!typeRaw) return;
 
   const normalized = typeRaw.toLowerCase().startsWith('o') ? 'offices' : 'houses';
-  const date = window.prompt('Booking date (YYYY-MM-DD):', selectedDateKey);
+  const date = await uiPrompt('Booking date (YYYY-MM-DD):', selectedDateKey, {
+    label: 'Date',
+    placeholder: 'YYYY-MM-DD'
+  });
   if (!date) return;
-  const time = window.prompt('Booking time (e.g. 2:30 PM):');
+  const time = await uiPrompt('Booking time (e.g. 2:30 PM):', '', { label: 'Time' });
   if (!time) return;
-  const location = window.prompt('Location:', matchedClient?.address || '');
+  const location = await uiPrompt('Location:', matchedClient?.address || '', { label: 'Location' });
   if (!location) return;
-  const notes = window.prompt('Notes:', 'Routine') || 'Routine';
-  const assignedEmployees = parseCommaList(window.prompt('Assigned employees (comma-separated):', ''));
+  const notes = (await uiPrompt('Notes:', 'Routine', { label: 'Notes' })) || 'Routine';
+  const assignedEmployees = parseCommaList(
+    await uiPrompt('Assigned employees (comma-separated):', '', {
+      label: 'Employees'
+    })
+  );
 
   try {
     await api(`/api/house-office-schedule/${normalized}`, {
@@ -633,18 +799,18 @@ async function addBooking() {
     selectedDateKey = date;
     await refresh();
   } catch (error) {
-    window.alert(error.message);
+    await uiAlert(error.message);
   }
 }
 
 async function addEmployee() {
   if (!isAdmin()) return;
 
-  const name = window.prompt('Employee full name:');
+  const name = await uiPrompt('Employee full name:', '', { label: 'Full name' });
   if (!name) return;
-  const username = window.prompt('Username for login:');
+  const username = await uiPrompt('Username for login:', '', { label: 'Username' });
   if (!username) return;
-  const password = window.prompt('Temporary password:');
+  const password = await uiPrompt('Temporary password:', '', { label: 'Temporary password', type: 'password' });
   if (!password) return;
 
   try {
@@ -654,7 +820,7 @@ async function addEmployee() {
     });
     await refresh();
   } catch (error) {
-    window.alert(error.message);
+    await uiAlert(error.message);
   }
 }
 
@@ -721,7 +887,7 @@ async function printInvoices() {
   const payload = await api(`/api/admin/invoices?weekStart=${encodeURIComponent(weekStart)}`);
 
   if (!payload.invoices.length) {
-    window.alert('No cleaned house bookings found for the selected week.');
+    await uiAlert('No cleaned house bookings found for the selected week.');
     return;
   }
 
@@ -756,7 +922,7 @@ async function printInvoices() {
 
   const win = window.open('', '_blank');
   if (!win) {
-    window.alert('Pop-up blocked. Allow pop-ups to print invoices.');
+    await uiAlert('Pop-up blocked. Allow pop-ups to print invoices.');
     return;
   }
 
@@ -862,7 +1028,7 @@ printInvoicesBtn.addEventListener('click', async () => {
   try {
     await printInvoices();
   } catch (error) {
-    window.alert(error.message);
+    await uiAlert(error.message);
   }
 });
 
@@ -875,17 +1041,17 @@ clockForm.addEventListener('submit', async (event) => {
   const notes = clockNotesInput.value.trim();
 
   if (!employeeId) {
-    window.alert('Please select an employee.');
+    await uiAlert('Please select an employee.');
     return;
   }
 
   if (!date || !isDateKey(date)) {
-    window.alert('Please enter a valid date.');
+    await uiAlert('Please enter a valid date.');
     return;
   }
 
   if (!Number.isFinite(hours) || hours < 0) {
-    window.alert('Please enter valid hours.');
+    await uiAlert('Please enter valid hours.');
     return;
   }
 
@@ -899,7 +1065,7 @@ clockForm.addEventListener('submit', async (event) => {
     clockNotesInput.value = '';
     await refresh();
   } catch (error) {
-    window.alert(error.message);
+    await uiAlert(error.message);
   }
 });
 
@@ -949,7 +1115,9 @@ document.addEventListener('click', async (event) => {
       const type = actionElement.dataset.type;
       if (!type) return;
 
-      const employeesInput = window.prompt('Assign employees (comma-separated):', '');
+      const employeesInput = await uiPrompt('Assign employees (comma-separated):', '', {
+        label: 'Employees'
+      });
       if (employeesInput === null) return;
 
       await api(`/api/house-office-schedule/${type}/${id}/assignment`, {
@@ -970,7 +1138,7 @@ document.addEventListener('click', async (event) => {
     }
 
     if (action === 'delete-client') {
-      const ok = window.confirm('Delete this client? Related calendar bookings will be archived.');
+      const ok = await uiConfirm('Delete this client? Related calendar bookings will be archived.');
       if (!ok) return;
       await api(`/api/clients/${id}`, { method: 'DELETE' });
     }
@@ -983,7 +1151,7 @@ document.addEventListener('click', async (event) => {
 
     await refresh();
   } catch (error) {
-    window.alert(error.message);
+    await uiAlert(error.message);
   }
 });
 

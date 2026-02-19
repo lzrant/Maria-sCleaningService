@@ -624,6 +624,70 @@ tbody tr:last-child td {
   transform: translateY(-2px);
 }
 
+.ui-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(48, 9, 30, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.ui-modal-card {
+  width: min(520px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #f3d3e4;
+  box-shadow: var(--shadow);
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.ui-modal-card h3 {
+  font-family: "Fraunces", serif;
+}
+
+.ui-modal-card p {
+  color: var(--muted);
+}
+
+.ui-modal-form {
+  display: grid;
+  gap: 10px;
+}
+
+.ui-modal-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.ui-modal-form input,
+.ui-modal-form textarea,
+.ui-modal-form select {
+  border: 1px solid #f2c6dd;
+  background: #fff8fc;
+  border-radius: 10px;
+  padding: 9px 11px;
+  font: inherit;
+  color: var(--text);
+}
+
+.ui-modal-form textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.ui-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 @keyframes fade {
   from {
     opacity: 0;
@@ -774,5 +838,14 @@ tbody tr:last-child td {
     font-size: 0.82rem;
     right: 14px;
     bottom: 14px;
+  }
+
+  .ui-modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .ui-modal-actions .action-btn,
+  .ui-modal-actions .ghost-btn {
+    width: 100%;
   }
 }

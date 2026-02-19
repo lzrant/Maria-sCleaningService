@@ -241,6 +241,18 @@
 
     <button id="add-client-fab" class="fab-btn admin-only hidden" type="button" aria-label="Add action">Add</button>
 
+    <div id="ui-modal" class="ui-modal hidden" role="dialog" aria-modal="true" aria-labelledby="ui-modal-title">
+      <div class="ui-modal-card">
+        <h3 id="ui-modal-title"></h3>
+        <p id="ui-modal-message"></p>
+        <form id="ui-modal-form" class="ui-modal-form"></form>
+        <div class="ui-modal-actions">
+          <button id="ui-modal-cancel" type="button" class="ghost-btn">Cancel</button>
+          <button id="ui-modal-confirm" type="button" class="action-btn">Continue</button>
+        </div>
+      </div>
+    </div>
+
     <script src="script.js"></script>
   </body>
 </html>
