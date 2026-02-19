@@ -68,6 +68,33 @@
         ],
         "cleaned": true,
         "cleanedAt": "2026-02-19T01:56:12.324Z"
+      },
+      {
+        "id": "house-2dcdabde-d330-4e1b-8175-a35348e84e03",
+        "clientId": "client-0ca49829-c146-4e32-8f83-25056ba624fd",
+        "clientName": "Mary Pat",
+        "date": "2026-02-23",
+        "time": "3:30 PM",
+        "location": "8 Nova Ln",
+        "notes": "Routine",
+        "assignedEmployees": [
+          "Maria",
+          "Antonio."
+        ],
+        "cleaned": false,
+        "cleanedAt": null
+      },
+      {
+        "id": "house-fedc47a9-edd7-4bb2-a601-258665ae6d44",
+        "clientId": "client-0ca49829-c146-4e32-8f83-25056ba624fd",
+        "clientName": "Mary Pat",
+        "date": "2026-03-21",
+        "time": "3:30PM",
+        "location": "8 Nova Ln",
+        "notes": "Routine",
+        "assignedEmployees": [],
+        "cleaned": false,
+        "cleanedAt": null
       }
     ],
     "offices": [
@@ -123,6 +150,18 @@
       "weeklyRate": 200,
       "status": "active",
       "createdAt": "2026-02-05T10:00:00.000Z"
+    },
+    {
+      "id": "client-0ca49829-c146-4e32-8f83-25056ba624fd",
+      "name": "Mary Pat",
+      "type": "house",
+      "phone": "",
+      "email": "",
+      "address": "8 Nova Ln",
+      "notes": "Dogs",
+      "weeklyRate": 200,
+      "status": "active",
+      "createdAt": "2026-02-19T03:00:57.098Z"
     }
   ],
   "timesheets": [
