@@ -53,11 +53,12 @@
       <main class="layout">
         <nav class="tabs" aria-label="Main navigation">
           <button class="tab is-active" data-tab="home">Home</button>
+          <button class="tab" data-tab="employees" data-admin-only="true">Employees</button>
           <button class="tab" data-tab="clients" data-admin-only="true">Clients</button>
           <button class="tab" data-tab="inventory" data-admin-only="true">Inventory</button>
           <button class="tab" data-tab="employee-schedule">Employee Schedule</button>
           <button class="tab" data-tab="house-office-schedule">House/Office Schedule</button>
-          <button class="tab" data-tab="time-clock">Time Clock</button>
+          <button class="tab" data-tab="time-clock" data-admin-only="true">Time Clock</button>
         </nav>
 
         <section class="panel-wrap">
@@ -117,6 +118,22 @@
                 </tr>
               </thead>
               <tbody id="inventory-table-body"></tbody>
+            </table>
+          </article>
+
+          <article class="panel" id="employees">
+            <div class="section-header">
+              <h2>Employee List</h2>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Username</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="employees-table-body"></tbody>
             </table>
           </article>
 
@@ -181,7 +198,11 @@
             <div class="section-header">
               <h2>Time Clock</h2>
             </div>
-            <form id="clock-form" class="mini-form">
+            <form id="clock-form" class="mini-form admin-only">
+              <label>
+                Employee
+                <select id="clock-employee" required></select>
+              </label>
               <label>
                 Date
                 <input id="clock-date" type="date" required />

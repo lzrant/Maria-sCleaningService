@@ -16,6 +16,7 @@ const inventoryHealthCount = document.getElementById('inventory-health-count');
 const todayGlanceList = document.getElementById('today-glance-list');
 
 const inventoryTableBody = document.getElementById('inventory-table-body');
+const employeesTableBody = document.getElementById('employees-table-body');
 const clientsTableBody = document.getElementById('clients-table-body');
 const employeeTimeline = document.getElementById('employee-timeline');
 const bookingCalendarGrid = document.getElementById('booking-calendar-grid');
@@ -34,6 +35,7 @@ const nextMonthBtn = document.getElementById('next-month-btn');
 const addClientFab = document.getElementById('add-client-fab');
 
 const clockForm = document.getElementById('clock-form');
+const clockEmployeeSelect = document.getElementById('clock-employee');
 const clockDateInput = document.getElementById('clock-date');
 const clockHoursInput = document.getElementById('clock-hours');
 const clockNotesInput = document.getElementById('clock-notes');
@@ -45,6 +47,7 @@ const adminOnlyTabs = document.querySelectorAll('[data-admin-only="true"]');
 
 let store = {
   inventory: [],
+  employees: [],
   employeeSchedule: [],
   houseOfficeSchedule: { houses: [], offices: [] },
   clients: [],
@@ -266,6 +269,38 @@ function renderInventory() {
   inventoryTableBody.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="5">No inventory items yet.</td></tr>';
 }
 
+function renderEmployees() {
+  if (!isAdmin()) {
+    employeesTableBody.innerHTML = '<tr><td colspan="3">Admin access required.</td></tr>';
+    if (clockEmployeeSelect) {
+      clockEmployeeSelect.innerHTML = '';
+    }
+    return;
+  }
+
+  const employees = (store.employees || []).filter((entry) => entry.role === 'employee');
+  const rows = employees.map(
+    (entry) => `
+      <tr>
+        <td>${escapeHtml(entry.name)}</td>
+        <td>${escapeHtml(entry.username)}</td>
+        <td>${entry.active ? '<span class="pill pill-ok">Active</span>' : '<span class="pill pill-warn">Inactive</span>'}</td>
+      </tr>
+    `
+  );
+
+  employeesTableBody.innerHTML = rows.length
+    ? rows.join('')
+    : '<tr><td colspan="3">No employees found.</td></tr>';
+
+  if (clockEmployeeSelect) {
+    const options = employees
+      .map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} (${escapeHtml(entry.username)})</option>`)
+      .join('');
+    clockEmployeeSelect.innerHTML = options;
+  }
+}
+
 function renderClients() {
   if (!isAdmin()) {
     clientsTableBody.innerHTML = '<tr><td colspan="5">Admin access required.</td></tr>';
@@ -432,6 +467,7 @@ function renderTimesheets() {
 function renderAll() {
   renderHome();
   renderInventory();
+  renderEmployees();
   renderClients();
   renderEmployeeSchedule();
   renderBookingCalendar();
@@ -741,10 +777,17 @@ printInvoicesBtn.addEventListener('click', async () => {
 });
 
 clockForm.addEventListener('submit', async (event) => {
+  if (!isAdmin()) return;
   event.preventDefault();
+  const employeeId = clockEmployeeSelect.value;
   const date = clockDateInput.value;
   const hours = Number(clockHoursInput.value);
   const notes = clockNotesInput.value.trim();
+
+  if (!employeeId) {
+    window.alert('Please select an employee.');
+    return;
+  }
 
   if (!date || !isDateKey(date)) {
     window.alert('Please enter a valid date.');
@@ -759,7 +802,7 @@ clockForm.addEventListener('submit', async (event) => {
   try {
     await api('/api/employee/clock', {
       method: 'POST',
-      body: JSON.stringify({ date, hours, notes })
+      body: JSON.stringify({ employeeId, date, hours, notes })
     });
 
     clockHoursInput.value = '';

@@ -413,16 +413,30 @@ app.post('/api/auth/logout', (req, res) => {
   return res.status(204).send();
 });
 
-app.get('/api/data', requireRole('admin', 'employee'), async (_, res) => {
+app.get('/api/data', requireRole('admin', 'employee'), async (req, res) => {
   try {
     const store = await readStore();
+    const employees =
+      req.auth.user.role === 'admin'
+        ? store.users
+            .filter((user) => user.role === 'employee')
+            .map((user) => ({
+              id: user.id,
+              username: user.username,
+              name: user.name,
+              role: user.role,
+              active: Boolean(user.active)
+            }))
+        : [];
+
     res.json({
       inventory: store.inventory,
+      employees,
       employeeSchedule: store.employeeSchedule,
       houseOfficeSchedule: store.houseOfficeSchedule,
       clients: store.clients,
       archived: store.archived,
-      timesheets: store.timesheets
+      timesheets: req.auth.user.role === 'admin' ? store.timesheets : []
     });
   } catch {
     res.status(500).json({ error: 'Unable to load data store.' });
@@ -714,9 +728,14 @@ app.delete('/api/house-office-schedule/:type/:id', requireRole('admin'), async (
   }
 });
 
-app.post('/api/employee/clock', requireRole('admin', 'employee'), async (req, res) => {
+app.post('/api/employee/clock', requireRole('admin'), async (req, res) => {
+  const employeeId = String(req.body.employeeId || '').trim();
   const date = String(req.body.date || '').trim();
   const hours = toNumber(req.body.hours, NaN);
+
+  if (!employeeId) {
+    return res.status(400).json({ error: 'employeeId is required.' });
+  }
 
   if (!isDateKey(date)) {
     return res.status(400).json({ error: 'date must be in YYYY-MM-DD format.' });
@@ -728,10 +747,15 @@ app.post('/api/employee/clock', requireRole('admin', 'employee'), async (req, re
 
   try {
     const store = await readStore();
+    const employee = store.users.find((user) => user.id === employeeId && user.role === 'employee' && user.active);
+    if (!employee) {
+      return res.status(400).json({ error: 'employeeId does not reference an active employee.' });
+    }
+
     const entry = {
       id: `time-${crypto.randomUUID()}`,
-      userId: req.auth.user.id,
-      employeeName: req.auth.user.name,
+      userId: employee.id,
+      employeeName: employee.name,
       date,
       hours,
       notes: String(req.body.notes || '').trim(),
