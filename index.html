@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Maria's Cleaning Service</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="background-shape background-shape-1"></div>
+    <div class="background-shape background-shape-2"></div>
+
+    <section id="auth-screen" class="auth-screen">
+      <form id="login-form" class="auth-card">
+        <h2>Secure Login</h2>
+        <p>Sign in to access operations.</p>
+        <label>
+          Username
+          <input id="login-username" name="username" autocomplete="username" required />
+        </label>
+        <label>
+          Password
+          <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit" class="action-btn">Sign In</button>
+        <small id="login-error" class="form-error"></small>
+        <small>Default admin: <code>admin</code> / <code>admin123</code></small>
+        <small>Default employee: <code>employee</code> / <code>employee123</code></small>
+      </form>
+    </section>
+
+    <div id="app-shell" class="app-shell hidden">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">MC</span>
+          <div>
+            <h1>Maria's Cleaning Service</h1>
+            <p>Daily operations dashboard</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <span id="current-user-badge" class="user-badge"></span>
+          <button class="action-btn" id="logout-btn" type="button">Log Out</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <nav class="tabs" aria-label="Main navigation">
+          <button class="tab is-active" data-tab="home">Home</button>
+          <button class="tab" data-tab="clients" data-admin-only="true">Clients</button>
+          <button class="tab" data-tab="inventory" data-admin-only="true">Inventory</button>
+          <button class="tab" data-tab="employee-schedule">Employee Schedule</button>
+          <button class="tab" data-tab="house-office-schedule">House/Office Schedule</button>
+          <button class="tab" data-tab="time-clock">Time Clock</button>
+        </nav>
+
+        <section class="panel-wrap">
+          <article class="panel is-active" id="home">
+            <div class="hero-card">
+              <h2>Welcome to the command center</h2>
+              <p>
+                Track supplies, assign your team, lock in every house and office cleaning slot, and run payroll/reporting.
+              </p>
+              <div class="hero-stats">
+                <div>
+                  <strong id="jobs-today-count">0</strong>
+                  <span>Jobs today</span>
+                </div>
+                <div>
+                  <strong id="team-active-count">0</strong>
+                  <span>Team members active</span>
+                </div>
+                <div>
+                  <strong id="inventory-health-count">0%</strong>
+                  <span>Inventory healthy</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="cards-grid">
+              <div class="mini-card">
+                <h3>Quick Actions</h3>
+                <ul>
+                  <li>Assign employees to each booking day</li>
+                  <li>Mark completed house cleanings</li>
+                  <li>Export employee hours for payroll</li>
+                </ul>
+              </div>
+              <div class="mini-card">
+                <h3>Today at a Glance</h3>
+                <ul id="today-glance-list">
+                  <li>Loading...</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel" id="inventory">
+            <div class="section-header">
+              <h2>Inventory</h2>
+              <button class="ghost-btn" id="add-inventory-btn" type="button">Add Item</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>In Stock</th>
+                  <th>Minimum</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="inventory-table-body"></tbody>
+            </table>
+          </article>
+
+          <article class="panel" id="clients">
+            <div class="section-header">
+              <h2>Client List</h2>
+              <input id="client-search-input" type="search" placeholder="Search clients..." />
+            </div>
+            <div class="invoice-controls admin-only">
+              <label>
+                Invoice week start
+                <input id="invoice-week-start" type="date" />
+              </label>
+              <button id="print-invoices-btn" class="ghost-btn" type="button">Print Weekly Invoices</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Phone</th>
+                  <th>Address</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="clients-table-body"></tbody>
+            </table>
+          </article>
+
+          <article class="panel" id="employee-schedule">
+            <div class="section-header">
+              <h2>Employee Schedule</h2>
+              <button class="ghost-btn admin-only" id="add-shift-btn" type="button">Assign Shift</button>
+            </div>
+            <div class="timeline" id="employee-timeline"></div>
+          </article>
+
+          <article class="panel" id="house-office-schedule">
+            <div class="section-header">
+              <h2>House/Office Schedule</h2>
+              <button class="ghost-btn" id="add-booking-btn" type="button">Add Booking</button>
+            </div>
+            <div class="calendar-shell">
+              <div class="calendar-toolbar">
+                <button class="ghost-btn" id="prev-month-btn" type="button">Previous</button>
+                <h3 id="calendar-month-label">Month YYYY</h3>
+                <button class="ghost-btn" id="next-month-btn" type="button">Next</button>
+              </div>
+              <div class="calendar-weekdays">
+                <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+              </div>
+              <div class="calendar-grid" id="booking-calendar-grid"></div>
+            </div>
+
+            <div class="mini-card selected-day-card">
+              <h3 id="selected-date-label">Bookings</h3>
+              <ul id="selected-day-bookings"></ul>
+            </div>
+          </article>
+
+          <article class="panel" id="time-clock">
+            <div class="section-header">
+              <h2>Time Clock</h2>
+            </div>
+            <form id="clock-form" class="mini-form">
+              <label>
+                Date
+                <input id="clock-date" type="date" required />
+              </label>
+              <label>
+                Hours
+                <input id="clock-hours" type="number" step="0.25" min="0" required />
+              </label>
+              <label>
+                Notes
+                <input id="clock-notes" type="text" placeholder="Optional" />
+              </label>
+              <button type="submit" class="ghost-btn">Clock Hours</button>
+            </form>
+
+            <div class="section-header admin-only">
+              <h3>Hours Report (Admin)</h3>
+              <button id="export-timesheets-btn" class="ghost-btn" type="button">Download Excel CSV</button>
+            </div>
+            <table class="admin-only">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Date</th>
+                  <th>Hours</th>
+                  <th>Notes</th>
+                  <th>Clocked At</th>
+                </tr>
+              </thead>
+              <tbody id="timesheet-table-body"></tbody>
+            </table>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <button id="add-client-fab" class="fab-btn admin-only hidden" type="button" aria-label="Add client">+</button>
+
+    <script src="script.js"></script>
+  </body>
+</html>
