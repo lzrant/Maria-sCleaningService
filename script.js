@@ -32,7 +32,7 @@ const addShiftBtn = document.getElementById('add-shift-btn');
 const addBookingBtn = document.getElementById('add-booking-btn');
 const prevMonthBtn = document.getElementById('prev-month-btn');
 const nextMonthBtn = document.getElementById('next-month-btn');
-const addClientFab = document.getElementById('add-client-fab');
+const addActionFab = document.getElementById('add-client-fab');
 
 const clockForm = document.getElementById('clock-form');
 const clockEmployeeSelect = document.getElementById('clock-employee');
@@ -179,7 +179,7 @@ function switchToAuth() {
   currentUser = null;
   appShell.classList.add('hidden');
   authScreen.classList.remove('hidden');
-  addClientFab.classList.add('hidden');
+  addActionFab.classList.add('hidden');
 }
 
 function applyRoleAccess() {
@@ -195,7 +195,7 @@ function applyRoleAccess() {
     tab.classList.toggle('hidden', !admin);
   });
 
-  addClientFab.classList.toggle('hidden', !admin);
+  addActionFab.classList.toggle('hidden', !admin);
   addInventoryBtn.classList.toggle('hidden', !admin);
   addShiftBtn.classList.toggle('hidden', !admin);
   addBookingBtn.classList.toggle('hidden', !admin);
@@ -204,6 +204,8 @@ function applyRoleAccess() {
   if (activeTab?.classList.contains('hidden')) {
     document.querySelector('.tab[data-tab="home"]')?.click();
   }
+
+  updateFabForActiveTab();
 }
 
 async function fetchStore() {
@@ -294,10 +296,14 @@ function renderEmployees() {
     : '<tr><td colspan="3">No employees found.</td></tr>';
 
   if (clockEmployeeSelect) {
+    const currentSelection = clockEmployeeSelect.value;
     const options = employees
       .map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} (${escapeHtml(entry.username)})</option>`)
       .join('');
     clockEmployeeSelect.innerHTML = options;
+    if (currentSelection && employees.some((entry) => entry.id === currentSelection)) {
+      clockEmployeeSelect.value = currentSelection;
+    }
   }
 }
 
@@ -516,6 +522,168 @@ async function scheduleForClient(client) {
   }
 }
 
+async function addClient() {
+  if (!isAdmin()) return;
+
+  const name = window.prompt('Client name:');
+  if (!name) return;
+
+  const type = window.prompt('Client type (house/office):', 'house') || 'house';
+  const phone = window.prompt('Phone (optional):', '') || '';
+  const email = window.prompt('Email (optional):', '') || '';
+  const address = window.prompt('Address (optional):', '') || '';
+  const notes = window.prompt('Notes (optional):', '') || '';
+  const weeklyRateRaw = window.prompt('Weekly invoice rate for cleaned visits:', '120') || '120';
+  const weeklyRate = Number(weeklyRateRaw) || 120;
+
+  try {
+    const client = await api('/api/clients', {
+      method: 'POST',
+      body: JSON.stringify({ name, type, phone, email, address, notes, weeklyRate })
+    });
+
+    await scheduleForClient(client);
+    await refresh();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function addInventoryItem() {
+  if (!isAdmin()) return;
+
+  const name = window.prompt('Item name:');
+  if (!name) return;
+  const inStock = window.prompt('In stock amount (number):');
+  if (inStock === null) return;
+  const minimum = window.prompt('Minimum amount (number):');
+  if (minimum === null) return;
+  const unit = window.prompt('Unit (e.g. bottles, units):') || 'units';
+
+  try {
+    await api('/api/inventory', {
+      method: 'POST',
+      body: JSON.stringify({ name, inStock, minimum, unit })
+    });
+    await refresh();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function addShift() {
+  if (!isAdmin()) return;
+
+  const date = window.prompt('Shift date (YYYY-MM-DD):', selectedDateKey);
+  if (!date) return;
+  const time = window.prompt('Shift time (e.g. 9:00 AM):');
+  if (!time) return;
+  const employee = window.prompt('Employee name(s):');
+  if (!employee) return;
+  const details = window.prompt('Shift details:');
+  if (!details) return;
+
+  try {
+    await api('/api/employee-schedule', {
+      method: 'POST',
+      body: JSON.stringify({ date, time, employee, details })
+    });
+    await refresh();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function addBooking() {
+  if (!isAdmin()) return;
+
+  const clientName = window.prompt('Client name (optional, exact match):', '');
+  const matchedClient = findClientByName(clientName);
+
+  const typeRaw = window.prompt(
+    `Booking type: house or office?${matchedClient ? ` (auto: ${matchedClient.type})` : ''}`,
+    matchedClient ? matchedClient.type : 'house'
+  );
+  if (!typeRaw) return;
+
+  const normalized = typeRaw.toLowerCase().startsWith('o') ? 'offices' : 'houses';
+  const date = window.prompt('Booking date (YYYY-MM-DD):', selectedDateKey);
+  if (!date) return;
+  const time = window.prompt('Booking time (e.g. 2:30 PM):');
+  if (!time) return;
+  const location = window.prompt('Location:', matchedClient?.address || '');
+  if (!location) return;
+  const notes = window.prompt('Notes:', 'Routine') || 'Routine';
+  const assignedEmployees = parseCommaList(window.prompt('Assigned employees (comma-separated):', ''));
+
+  try {
+    await api(`/api/house-office-schedule/${normalized}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        clientId: matchedClient?.id || null,
+        clientName: matchedClient?.name || null,
+        date,
+        time,
+        location,
+        notes,
+        assignedEmployees
+      })
+    });
+
+    selectedDateKey = date;
+    await refresh();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function addEmployee() {
+  if (!isAdmin()) return;
+
+  const name = window.prompt('Employee full name:');
+  if (!name) return;
+  const username = window.prompt('Username for login:');
+  if (!username) return;
+  const password = window.prompt('Temporary password:');
+  if (!password) return;
+
+  try {
+    await api('/api/admin/employees', {
+      method: 'POST',
+      body: JSON.stringify({ name, username, password })
+    });
+    await refresh();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+function updateFabForActiveTab() {
+  if (!isAdmin()) {
+    addActionFab.classList.add('hidden');
+    return;
+  }
+
+  const activeTabId = document.querySelector('.tab.is-active')?.dataset.tab || 'home';
+  const configByTab = {
+    employees: { label: 'Add New Employee', ariaLabel: 'Add new employee' },
+    clients: { label: 'Add New Client', ariaLabel: 'Add new client' },
+    inventory: { label: 'Add Item', ariaLabel: 'Add inventory item' },
+    'employee-schedule': { label: 'Assign Shift', ariaLabel: 'Assign employee shift' },
+    'house-office-schedule': { label: 'Add Booking', ariaLabel: 'Add booking' }
+  };
+
+  const config = configByTab[activeTabId];
+  if (!config) {
+    addActionFab.classList.add('hidden');
+    return;
+  }
+
+  addActionFab.classList.remove('hidden');
+  addActionFab.textContent = config.label;
+  addActionFab.setAttribute('aria-label', config.ariaLabel);
+}
+
 function setupTabs() {
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -527,6 +695,7 @@ function setupTabs() {
 
       tab.classList.add('is-active');
       document.getElementById(target)?.classList.add('is-active');
+      updateFabForActiveTab();
     });
   });
 }
@@ -632,119 +801,40 @@ logoutBtn.addEventListener('click', async () => {
   switchToAuth();
 });
 
-addClientFab.addEventListener('click', async () => {
-  if (!isAdmin()) return;
+addActionFab.addEventListener('click', async () => {
+  const activeTabId = document.querySelector('.tab.is-active')?.dataset.tab || 'home';
 
-  const name = window.prompt('Client name:');
-  if (!name) return;
-
-  const type = window.prompt('Client type (house/office):', 'house') || 'house';
-  const phone = window.prompt('Phone (optional):', '') || '';
-  const email = window.prompt('Email (optional):', '') || '';
-  const address = window.prompt('Address (optional):', '') || '';
-  const notes = window.prompt('Notes (optional):', '') || '';
-  const weeklyRateRaw = window.prompt('Weekly invoice rate for cleaned visits:', '120') || '120';
-  const weeklyRate = Number(weeklyRateRaw) || 120;
-
-  try {
-    const client = await api('/api/clients', {
-      method: 'POST',
-      body: JSON.stringify({ name, type, phone, email, address, notes, weeklyRate })
-    });
-
-    await scheduleForClient(client);
-    await refresh();
-  } catch (error) {
-    window.alert(error.message);
+  if (activeTabId === 'employees') {
+    await addEmployee();
+    return;
+  }
+  if (activeTabId === 'clients') {
+    await addClient();
+    return;
+  }
+  if (activeTabId === 'inventory') {
+    await addInventoryItem();
+    return;
+  }
+  if (activeTabId === 'employee-schedule') {
+    await addShift();
+    return;
+  }
+  if (activeTabId === 'house-office-schedule') {
+    await addBooking();
   }
 });
 
 addInventoryBtn.addEventListener('click', async () => {
-  if (!isAdmin()) return;
-
-  const name = window.prompt('Item name:');
-  if (!name) return;
-  const inStock = window.prompt('In stock amount (number):');
-  if (inStock === null) return;
-  const minimum = window.prompt('Minimum amount (number):');
-  if (minimum === null) return;
-  const unit = window.prompt('Unit (e.g. bottles, units):') || 'units';
-
-  try {
-    await api('/api/inventory', {
-      method: 'POST',
-      body: JSON.stringify({ name, inStock, minimum, unit })
-    });
-    await refresh();
-  } catch (error) {
-    window.alert(error.message);
-  }
+  await addInventoryItem();
 });
 
 addShiftBtn.addEventListener('click', async () => {
-  if (!isAdmin()) return;
-
-  const date = window.prompt('Shift date (YYYY-MM-DD):', selectedDateKey);
-  if (!date) return;
-  const time = window.prompt('Shift time (e.g. 9:00 AM):');
-  if (!time) return;
-  const employee = window.prompt('Employee name(s):');
-  if (!employee) return;
-  const details = window.prompt('Shift details:');
-  if (!details) return;
-
-  try {
-    await api('/api/employee-schedule', {
-      method: 'POST',
-      body: JSON.stringify({ date, time, employee, details })
-    });
-    await refresh();
-  } catch (error) {
-    window.alert(error.message);
-  }
+  await addShift();
 });
 
 addBookingBtn.addEventListener('click', async () => {
-  if (!isAdmin()) return;
-
-  const clientName = window.prompt('Client name (optional, exact match):', '');
-  const matchedClient = findClientByName(clientName);
-
-  const typeRaw = window.prompt(
-    `Booking type: house or office?${matchedClient ? ` (auto: ${matchedClient.type})` : ''}`,
-    matchedClient ? matchedClient.type : 'house'
-  );
-  if (!typeRaw) return;
-
-  const normalized = typeRaw.toLowerCase().startsWith('o') ? 'offices' : 'houses';
-  const date = window.prompt('Booking date (YYYY-MM-DD):', selectedDateKey);
-  if (!date) return;
-  const time = window.prompt('Booking time (e.g. 2:30 PM):');
-  if (!time) return;
-  const location = window.prompt('Location:', matchedClient?.address || '');
-  if (!location) return;
-  const notes = window.prompt('Notes:', 'Routine') || 'Routine';
-  const assignedEmployees = parseCommaList(window.prompt('Assigned employees (comma-separated):', ''));
-
-  try {
-    await api(`/api/house-office-schedule/${normalized}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        clientId: matchedClient?.id || null,
-        clientName: matchedClient?.name || null,
-        date,
-        time,
-        location,
-        notes,
-        assignedEmployees
-      })
-    });
-
-    selectedDateKey = date;
-    await refresh();
-  } catch (error) {
-    window.alert(error.message);
-  }
+  await addBooking();
 });
 
 prevMonthBtn.addEventListener('click', () => {

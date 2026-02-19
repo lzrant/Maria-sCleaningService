@@ -443,6 +443,49 @@ app.get('/api/data', requireRole('admin', 'employee'), async (req, res) => {
   }
 });
 
+app.post('/api/admin/employees', requireRole('admin'), async (req, res) => {
+  const name = String(req.body.name || '').trim();
+  const username = String(req.body.username || '').trim();
+  const password = String(req.body.password || '');
+
+  if (!name || !username || !password) {
+    return res.status(400).json({ error: 'name, username, and password are required.' });
+  }
+
+  try {
+    const store = await readStore();
+    const exists = store.users.some((user) => user.username.toLowerCase() === username.toLowerCase());
+    if (exists) {
+      return res.status(400).json({ error: 'Username already exists.' });
+    }
+
+    const pass = createPasswordRecord(password);
+    const employee = {
+      id: `user-${crypto.randomUUID()}`,
+      username,
+      name,
+      role: 'employee',
+      salt: pass.salt,
+      passwordHash: pass.passwordHash,
+      active: true,
+      createdAt: getNowIso()
+    };
+
+    store.users.push(employee);
+    await writeStore(store);
+
+    res.status(201).json({
+      id: employee.id,
+      username: employee.username,
+      name: employee.name,
+      role: employee.role,
+      active: employee.active
+    });
+  } catch {
+    res.status(500).json({ error: 'Unable to create employee.' });
+  }
+});
+
 app.get('/api/clients', requireRole('admin'), async (req, res) => {
   try {
     const store = await readStore();
