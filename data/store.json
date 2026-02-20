@@ -29,13 +29,6 @@
       "time": "8:00 AM",
       "employee": "Maria + Jordan",
       "details": "Northpoint Office Tower - Floor cleanup"
-    },
-    {
-      "id": "emp-2",
-      "date": "2026-02-18",
-      "time": "10:30 AM",
-      "employee": "Camila",
-      "details": "Riverside Condo - Standard home cleaning"
     }
   ],
   "houseOfficeSchedule": {
@@ -48,10 +41,7 @@
         "time": "9:00 AM",
         "location": "285 Willow Dr",
         "notes": "Weekly",
-        "assignedEmployees": [
-          "Maria",
-          "Jordan"
-        ],
+        "assignedEmployees": [],
         "cleaned": true,
         "cleanedAt": "2026-02-19T01:56:19.457Z"
       },

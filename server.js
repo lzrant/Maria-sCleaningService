@@ -486,6 +486,42 @@ app.post('/api/admin/employees', requireRole('admin'), async (req, res) => {
   }
 });
 
+app.delete('/api/admin/employees/:id', requireRole('admin'), async (req, res) => {
+  try {
+    if (req.params.id === req.auth.user.id) {
+      return res.status(400).json({ error: 'You cannot remove your own account.' });
+    }
+
+    const store = await readStore();
+    const index = store.users.findIndex((user) => user.id === req.params.id && user.role === 'employee');
+
+    if (index === -1) {
+      return res.status(404).json({ error: 'Employee not found.' });
+    }
+
+    const employee = store.users[index];
+    store.users.splice(index, 1);
+
+    for (const type of ['houses', 'offices']) {
+      store.houseOfficeSchedule[type] = store.houseOfficeSchedule[type].map((booking) => ({
+        ...booking,
+        assignedEmployees: (booking.assignedEmployees || []).filter((name) => name !== employee.name)
+      }));
+    }
+
+    for (const [token, session] of sessions.entries()) {
+      if (session.userId === employee.id) {
+        sessions.delete(token);
+      }
+    }
+
+    await writeStore(store);
+    return res.status(204).send();
+  } catch {
+    return res.status(500).json({ error: 'Unable to delete employee.' });
+  }
+});
+
 app.get('/api/clients', requireRole('admin'), async (req, res) => {
   try {
     const store = await readStore();

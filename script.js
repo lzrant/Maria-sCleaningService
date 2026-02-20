@@ -82,6 +82,11 @@ function toDateKey(date) {
   return `${year}-${month}-${day}`;
 }
 
+function parseDateKey(dateKey) {
+  const parsed = new Date(`${dateKey}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function isDateKey(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value));
 }
@@ -136,6 +141,22 @@ function parseCommaList(value) {
 function createModalField(field) {
   const label = document.createElement('label');
   label.textContent = field.label;
+
+  if (field.type === 'select') {
+    const select = document.createElement('select');
+    select.name = field.name;
+    (field.options || []).forEach((option) => {
+      const opt = document.createElement('option');
+      opt.value = option.value;
+      opt.textContent = option.label;
+      if (String(option.value) === String(field.value || '')) {
+        opt.selected = true;
+      }
+      select.appendChild(opt);
+    });
+    label.appendChild(select);
+    return label;
+  }
 
   if (field.type === 'checkbox-group') {
     const group = document.createElement('div');
@@ -297,6 +318,105 @@ async function uiPrompt(message, defaultValue = '', options = {}) {
 
   if (!result.confirmed) return null;
   return result.values.value;
+}
+
+async function uiSelect(message, options, defaultValue, config = {}) {
+  const result = await showModal({
+    title: config.title || 'Select Option',
+    message,
+    confirmText: config.confirmText || 'Continue',
+    cancelText: config.cancelText || 'Cancel',
+    fields: [
+      {
+        name: 'value',
+        label: config.label || 'Option',
+        type: 'select',
+        value: defaultValue,
+        options
+      }
+    ]
+  });
+
+  if (!result.confirmed) return null;
+  return result.values.value;
+}
+
+function addDays(date, days) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+
+function addMonths(date, months) {
+  const copy = new Date(date);
+  copy.setMonth(copy.getMonth() + months);
+  return copy;
+}
+
+function getRepeatDayStep(repeatType) {
+  if (repeatType === 'daily') return 1;
+  if (repeatType === 'weekly') return 7;
+  if (repeatType === 'biweekly') return 14;
+  return 0;
+}
+
+function buildRepeatDates(startDateKey, repeatType, occurrences) {
+  const startDate = parseDateKey(startDateKey);
+  if (!startDate) return [];
+
+  const total = Number(occurrences);
+  const safeTotal = Number.isInteger(total) && total > 0 ? total : 1;
+  const dates = [];
+
+  if (repeatType === 'monthly') {
+    for (let index = 0; index < safeTotal; index += 1) {
+      dates.push(toDateKey(addMonths(startDate, index)));
+    }
+    return dates;
+  }
+
+  const step = getRepeatDayStep(repeatType);
+  if (step <= 0) {
+    return [toDateKey(startDate)];
+  }
+
+  for (let index = 0; index < safeTotal; index += 1) {
+    dates.push(toDateKey(addDays(startDate, step * index)));
+  }
+
+  return dates;
+}
+
+async function askRepeatSettings() {
+  const repeatType = await uiSelect(
+    'How often should this booking repeat?',
+    [
+      { value: 'none', label: 'Does not repeat' },
+      { value: 'daily', label: 'Daily' },
+      { value: 'weekly', label: 'Weekly' },
+      { value: 'biweekly', label: 'Bi-weekly' },
+      { value: 'monthly', label: 'Monthly' }
+    ],
+    'none',
+    { label: 'Repeat frequency' }
+  );
+
+  if (repeatType === null) return null;
+  if (repeatType === 'none') return { repeatType, occurrences: 1 };
+
+  const occurrencesRaw = await uiPrompt('How many total occurrences?', '4', {
+    label: 'Occurrences',
+    type: 'number'
+  });
+  if (occurrencesRaw === null) return null;
+
+  const occurrences = Number(occurrencesRaw);
+  if (!Number.isInteger(occurrences) || occurrences < 1 || occurrences > 365) {
+    await uiAlert('Occurrences must be a whole number between 1 and 365.');
+    return askRepeatSettings();
+  }
+
+  return { repeatType, occurrences };
 }
 
 function getAssignableEmployees() {
@@ -482,7 +602,7 @@ function renderInventory() {
 
 function renderEmployees() {
   if (!isAdmin()) {
-    employeesTableBody.innerHTML = '<tr><td colspan="3">Admin access required.</td></tr>';
+    employeesTableBody.innerHTML = '<tr><td colspan="4">Admin access required.</td></tr>';
     if (clockEmployeeSelect) {
       clockEmployeeSelect.innerHTML = '';
     }
@@ -496,13 +616,14 @@ function renderEmployees() {
         <td>${escapeHtml(entry.name)}</td>
         <td>${escapeHtml(entry.username)}</td>
         <td>${entry.active ? '<span class="pill pill-ok">Active</span>' : '<span class="pill pill-warn">Inactive</span>'}</td>
+        <td><button class="link-btn" data-action="delete-employee" data-id="${escapeHtml(entry.id)}">Delete</button></td>
       </tr>
     `
   );
 
   employeesTableBody.innerHTML = rows.length
     ? rows.join('')
-    : '<tr><td colspan="3">No employees found.</td></tr>';
+    : '<tr><td colspan="4">No employees found.</td></tr>';
 
   if (clockEmployeeSelect) {
     const currentSelection = clockEmployeeSelect.value;
@@ -719,22 +840,27 @@ async function scheduleForClient(client) {
         label: 'Employees'
       })
     );
+    const repeat = await askRepeatSettings();
+    if (!repeat) return;
 
     const type = client.type === 'office' ? 'offices' : 'houses';
+    const dates = buildRepeatDates(date, repeat.repeatType, repeat.occurrences);
 
-    await api(`/api/house-office-schedule/${type}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        clientId: client.id,
-        date,
-        time,
-        location,
-        notes,
-        assignedEmployees
-      })
-    });
+    for (const repeatDate of dates) {
+      await api(`/api/house-office-schedule/${type}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          clientId: client.id,
+          date: repeatDate,
+          time,
+          location,
+          notes,
+          assignedEmployees
+        })
+      });
+    }
 
-    selectedDateKey = date;
+    selectedDateKey = dates[dates.length - 1] || date;
     const again = await uiPrompt('Add another day/time for this client? (yes/no)', 'no', {
       label: 'Answer'
     });
@@ -848,22 +974,27 @@ async function addBooking() {
       label: 'Employees'
     })
   );
+  const repeat = await askRepeatSettings();
+  if (!repeat) return;
+  const dates = buildRepeatDates(date, repeat.repeatType, repeat.occurrences);
 
   try {
-    await api(`/api/house-office-schedule/${normalized}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        clientId: matchedClient?.id || null,
-        clientName: matchedClient?.name || null,
-        date,
-        time,
-        location,
-        notes,
-        assignedEmployees
-      })
-    });
+    for (const repeatDate of dates) {
+      await api(`/api/house-office-schedule/${normalized}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          clientId: matchedClient?.id || null,
+          clientName: matchedClient?.name || null,
+          date: repeatDate,
+          time,
+          location,
+          notes,
+          assignedEmployees
+        })
+      });
+    }
 
-    selectedDateKey = date;
+    selectedDateKey = dates[dates.length - 1] || date;
     await refresh();
   } catch (error) {
     await uiAlert(error.message);
@@ -1170,6 +1301,12 @@ document.addEventListener('click', async (event) => {
 
     if (action === 'delete-shift') {
       await api(`/api/employee-schedule/${id}`, { method: 'DELETE' });
+    }
+
+    if (action === 'delete-employee') {
+      const ok = await uiConfirm('Remove this employee? Existing assigned bookings will be unassigned.');
+      if (!ok) return;
+      await api(`/api/admin/employees/${id}`, { method: 'DELETE' });
     }
 
     if (action === 'delete-booking') {
