@@ -30,6 +30,7 @@ const printInvoicesBtn = document.getElementById('print-invoices-btn');
 const addInventoryBtn = document.getElementById('add-inventory-btn');
 const addShiftBtn = document.getElementById('add-shift-btn');
 const addBookingBtn = document.getElementById('add-booking-btn');
+const printScheduleBtn = document.getElementById('print-schedule-btn');
 const prevMonthBtn = document.getElementById('prev-month-btn');
 const nextMonthBtn = document.getElementById('next-month-btn');
 const addActionFab = document.getElementById('add-client-fab');
@@ -111,6 +112,15 @@ function formatDate(dateKey) {
 
 function formatMonth(date) {
   return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+
+function formatHumanDate(date) {
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
 }
 
 function isAdmin() {
@@ -350,6 +360,14 @@ function addDays(date, days) {
 function addMonths(date, months) {
   const copy = new Date(date);
   copy.setMonth(copy.getMonth() + months);
+  return copy;
+}
+
+function getStartOfWeekMonday(date) {
+  const copy = new Date(date);
+  const weekday = copy.getDay();
+  const diff = weekday === 0 ? -6 : 1 - weekday;
+  copy.setDate(copy.getDate() + diff);
   return copy;
 }
 
@@ -1189,6 +1207,152 @@ async function printInvoices() {
   win.print();
 }
 
+function getScheduleRange(period, anchorDateKey) {
+  const anchor = parseDateKey(anchorDateKey);
+  if (!anchor) return null;
+
+  if (period === 'daily') {
+    const start = new Date(anchor);
+    const end = new Date(anchor);
+    return { start, end, title: `Daily Schedule - ${formatHumanDate(start)}` };
+  }
+
+  if (period === 'weekly') {
+    const start = getStartOfWeekMonday(anchor);
+    const end = addDays(start, 6);
+    return {
+      start,
+      end,
+      title: `Weekly Schedule - ${formatHumanDate(start)} to ${formatHumanDate(end)}`
+    };
+  }
+
+  if (period === 'monthly') {
+    const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+    const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+    return {
+      start,
+      end,
+      title: `Monthly Schedule - ${start.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`
+    };
+  }
+
+  return null;
+}
+
+function renderPrintableScheduleHtml(period, startDate, endDate) {
+  const startKey = toDateKey(startDate);
+  const endKey = toDateKey(endDate);
+
+  const inRange = getAllBookings()
+    .filter((booking) => booking.date >= startKey && booking.date <= endKey)
+    .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+
+  if (!inRange.length) {
+    return '<p>No bookings found for this schedule range.</p>';
+  }
+
+  const grouped = new Map();
+  inRange.forEach((booking) => {
+    const list = grouped.get(booking.date) || [];
+    list.push(booking);
+    grouped.set(booking.date, list);
+  });
+
+  const sections = [...grouped.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([dateKey, bookings]) => {
+      const dayTitle = formatHumanDate(parseDateKey(dateKey));
+      const rows = bookings
+        .map((booking) => {
+          const typeLabel = booking.type === 'houses' ? 'House' : 'Office';
+          const assigned = (booking.assignedEmployees || []).length
+            ? booking.assignedEmployees.join(', ')
+            : 'Unassigned';
+          const dailyHouseEmployees =
+            period === 'daily' && booking.type === 'houses'
+              ? `<p><strong>Assigned Employees:</strong> ${escapeHtml(assigned)}</p>`
+              : '';
+
+          return `
+            <article style="border:1px solid #ddd; border-radius:10px; padding:10px; margin-bottom:10px;">
+              <p style="margin:0 0 6px;"><strong>${escapeHtml(typeLabel)}</strong> | ${escapeHtml(booking.time)} | ${escapeHtml(
+                booking.location
+              )}</p>
+              <p style="margin:0 0 6px;">Client: ${escapeHtml(booking.clientName || 'N/A')}</p>
+              <p style="margin:0 0 6px;">Notes: ${escapeHtml(booking.notes || '-')}</p>
+              ${dailyHouseEmployees}
+              ${
+                !(period === 'daily' && booking.type === 'houses')
+                  ? `<p style="margin:0 0 6px;">Assigned: ${escapeHtml(assigned)}</p>`
+                  : ''
+              }
+            </article>
+          `;
+        })
+        .join('');
+
+      return `
+        <section style="margin-bottom:20px;">
+          <h2 style="margin:0 0 10px; border-bottom:1px solid #ddd; padding-bottom:6px;">${escapeHtml(dayTitle)}</h2>
+          ${rows}
+        </section>
+      `;
+    })
+    .join('');
+
+  return sections;
+}
+
+async function printSchedule() {
+  const period = await uiSelect(
+    'Choose schedule print range.',
+    [
+      { value: 'daily', label: 'Daily schedule' },
+      { value: 'weekly', label: 'Weekly schedule' },
+      { value: 'monthly', label: 'Monthly schedule' }
+    ],
+    'daily',
+    { label: 'Range' }
+  );
+  if (!period) return;
+
+  const anchorDateKey = await uiPrompt('Base date for schedule range:', selectedDateKey, {
+    label: 'Date',
+    type: 'date'
+  });
+  if (!anchorDateKey || !isDateKey(anchorDateKey)) {
+    await uiAlert('Please choose a valid date in YYYY-MM-DD format.');
+    return;
+  }
+
+  const range = getScheduleRange(period, anchorDateKey);
+  if (!range) {
+    await uiAlert('Unable to create schedule range.');
+    return;
+  }
+
+  const html = renderPrintableScheduleHtml(period, range.start, range.end);
+  const win = window.open('', '_blank');
+  if (!win) {
+    await uiAlert('Pop-up blocked. Allow pop-ups to print schedules.');
+    return;
+  }
+
+  win.document.write(`
+    <html>
+      <head><title>${escapeHtml(range.title)}</title></head>
+      <body style="font-family: Arial, sans-serif; padding: 24px;">
+        <h1 style="margin-top:0;">${escapeHtml(range.title)}</h1>
+        ${html}
+      </body>
+    </html>
+  `);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   loginError.textContent = '';
@@ -1279,6 +1443,16 @@ printInvoicesBtn.addEventListener('click', async () => {
 
   try {
     await printInvoices();
+  } catch (error) {
+    await uiAlert(error.message);
+  }
+});
+
+printScheduleBtn.addEventListener('click', async () => {
+  if (!isAdmin()) return;
+
+  try {
+    await printSchedule();
   } catch (error) {
     await uiAlert(error.message);
   }
