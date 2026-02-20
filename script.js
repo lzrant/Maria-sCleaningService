@@ -946,10 +946,64 @@ async function addShift() {
 async function addBooking() {
   if (!isAdmin()) return;
 
-  const clientName = await uiPrompt('Client name (optional, exact match):', '', {
-    label: 'Client name'
-  });
-  const matchedClient = findClientByName(clientName);
+  const clientMode = await uiSelect(
+    'Choose a client option for this booking.',
+    [
+      { value: 'existing', label: 'Select existing client' },
+      { value: 'new', label: 'Add new client' },
+      { value: 'none', label: 'Booking without client' }
+    ],
+    'existing',
+    { label: 'Client option' }
+  );
+  if (clientMode === null) return;
+
+  let matchedClient = null;
+
+  if (clientMode === 'existing') {
+    const clients = getActiveClients();
+    if (!clients.length) {
+      await uiAlert('No active clients found. Add a new client first.');
+      return;
+    }
+
+    const clientId = await uiSelect(
+      'Select a current client.',
+      clients
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((client) => ({
+          value: client.id,
+          label: `${client.name} (${client.type})`
+        })),
+      clients[0].id,
+      { label: 'Client' }
+    );
+    if (clientId === null) return;
+    matchedClient = clients.find((client) => client.id === clientId) || null;
+  }
+
+  if (clientMode === 'new') {
+    const name = await uiPrompt('Client name:', '', { label: 'Name' });
+    if (!name) return;
+    const type = (await uiPrompt('Client type (house/office):', 'house', { label: 'Type' })) || 'house';
+    const phone = (await uiPrompt('Phone (optional):', '', { label: 'Phone' })) || '';
+    const email = (await uiPrompt('Email (optional):', '', { label: 'Email' })) || '';
+    const address = (await uiPrompt('Address (optional):', '', { label: 'Address' })) || '';
+    const notes = (await uiPrompt('Notes (optional):', '', { label: 'Notes' })) || '';
+    const weeklyRateRaw = (await uiPrompt('Weekly invoice rate for cleaned visits:', '120', { label: 'Weekly rate' })) || '120';
+    const weeklyRate = Number(weeklyRateRaw) || 120;
+
+    try {
+      matchedClient = await api('/api/clients', {
+        method: 'POST',
+        body: JSON.stringify({ name, type, phone, email, address, notes, weeklyRate })
+      });
+    } catch (error) {
+      await uiAlert(error.message);
+      return;
+    }
+  }
 
   const typeRaw = await uiPrompt(
     `Booking type: house or office?${matchedClient ? ` (auto: ${matchedClient.type})` : ''}`,
