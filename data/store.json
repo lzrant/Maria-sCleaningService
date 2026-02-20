@@ -86,6 +86,42 @@
         "assignedEmployees": [],
         "cleaned": false,
         "cleanedAt": null
+      },
+      {
+        "id": "house-2dd10020-a35d-442d-96f5-e239b26baa35",
+        "clientId": null,
+        "clientName": null,
+        "date": "2026-02-21",
+        "time": "9:00 AM",
+        "location": "UpTheStreet Mary Ln",
+        "notes": "Routine",
+        "assignedEmployees": [],
+        "cleaned": false,
+        "cleanedAt": null
+      },
+      {
+        "id": "house-6fe07f85-a833-4600-98b0-ec0c036e6099",
+        "clientId": null,
+        "clientName": null,
+        "date": "2026-02-28",
+        "time": "9:00 AM",
+        "location": "UpTheStreet Mary Ln",
+        "notes": "Routine",
+        "assignedEmployees": [],
+        "cleaned": false,
+        "cleanedAt": null
+      },
+      {
+        "id": "house-8ab4c6a4-8d33-439e-9e98-0bc2c79b0702",
+        "clientId": null,
+        "clientName": null,
+        "date": "2026-03-07",
+        "time": "9:00 AM",
+        "location": "UpTheStreet Mary Ln",
+        "notes": "Routine",
+        "assignedEmployees": [],
+        "cleaned": false,
+        "cleanedAt": null
       }
     ],
     "offices": [
