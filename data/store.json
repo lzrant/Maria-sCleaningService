@@ -41,7 +41,10 @@
         "time": "9:00 AM",
         "location": "285 Willow Dr",
         "notes": "Weekly",
-        "assignedEmployees": [],
+        "assignedEmployees": [
+          "Maria G Ayllon",
+          "Team Employee"
+        ],
         "cleaned": true,
         "cleanedAt": "2026-02-19T01:56:19.457Z"
       },
@@ -134,7 +137,8 @@
         "location": "Northpoint Tower Suite 401",
         "notes": "Routine",
         "assignedEmployees": [
-          "Aiden"
+          "Maria G Ayllon",
+          "Team Employee"
         ],
         "cleaned": true,
         "cleanedAt": "2026-02-19T01:56:15.254Z"
