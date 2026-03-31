@@ -7,6 +7,7 @@ export const loginForm = document.getElementById('login-form');
 export const loginUsername = document.getElementById('login-username');
 export const loginPassword = document.getElementById('login-password');
 export const loginError = document.getElementById('login-error');
+export const changePasswordBtn = document.getElementById('change-password-btn');
 export const logoutBtn = document.getElementById('logout-btn');
 export const currentUserBadge = document.getElementById('current-user-badge');
 

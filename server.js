@@ -9,9 +9,23 @@ const STORE_PATH = path.join(__dirname, 'data', 'store.json');
 const SESSION_COOKIE = 'session_token';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 const sessions = new Map();
+const loginAttempts = new Map();
+const LOGIN_WINDOW_MS = 1000 * 60 * 15;
+const LOGIN_MAX_ATTEMPTS = 8;
+let initialAdminNotice = null;
 
+app.set('trust proxy', 1);
 app.use(express.json());
-app.use(express.static(__dirname));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+app.get('/styles.css', (req, res) => {
+  res.sendFile(path.join(__dirname, 'styles.css'));
+});
+app.get('/script.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'script.js'));
+});
+app.use('/js', express.static(path.join(__dirname, 'js')));
 
 const inventorySchema = ['name', 'inStock', 'minimum', 'unit'];
 const employeeSchema = ['time', 'employee', 'details'];
@@ -106,17 +120,81 @@ function getCookie(req, name) {
   return null;
 }
 
-function setSessionCookie(res, token) {
+function isSecureRequest(req) {
+  return req.secure || req.get('x-forwarded-proto') === 'https' || process.env.NODE_ENV === 'production';
+}
+
+function setSessionCookie(req, res, token) {
+  const secureFlag = isSecureRequest(req) ? '; Secure' : '';
   res.setHeader(
     'Set-Cookie',
-    `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=${Math.floor(
       SESSION_TTL_MS / 1000
     )}`
   );
 }
 
-function clearSessionCookie(res) {
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+function clearSessionCookie(req, res) {
+  const secureFlag = isSecureRequest(req) ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=0`);
+}
+
+function createInitialAdminUser() {
+  const username = String(process.env.ADMIN_USERNAME || 'admin').trim() || 'admin';
+  const generatedPassword = crypto.randomBytes(12).toString('base64url');
+  const password = String(process.env.ADMIN_PASSWORD || generatedPassword);
+  const pass = createPasswordRecord(password);
+
+  return {
+    user: {
+      id: `user-${crypto.randomUUID()}`,
+      username,
+      name: 'System Admin',
+      role: 'admin',
+      salt: pass.salt,
+      passwordHash: pass.passwordHash,
+      active: true,
+      createdAt: getNowIso()
+    },
+    plainPassword: password,
+    passwordSource: process.env.ADMIN_PASSWORD ? 'env' : 'generated'
+  };
+}
+
+function getLoginThrottleKey(req, username) {
+  const forwardedFor = req.get('x-forwarded-for');
+  const ip = forwardedFor ? forwardedFor.split(',')[0].trim() : req.ip || 'unknown';
+  return `${ip}:${String(username || '').toLowerCase()}`;
+}
+
+function isLoginBlocked(req, username) {
+  const key = getLoginThrottleKey(req, username);
+  const record = loginAttempts.get(key);
+  if (!record) return false;
+
+  if (record.expiresAt <= Date.now()) {
+    loginAttempts.delete(key);
+    return false;
+  }
+
+  return record.count >= LOGIN_MAX_ATTEMPTS;
+}
+
+function recordLoginFailure(req, username) {
+  const key = getLoginThrottleKey(req, username);
+  const now = Date.now();
+  const current = loginAttempts.get(key);
+
+  if (!current || current.expiresAt <= now) {
+    loginAttempts.set(key, { count: 1, expiresAt: now + LOGIN_WINDOW_MS });
+    return;
+  }
+
+  current.count += 1;
+}
+
+function clearLoginFailures(req, username) {
+  loginAttempts.delete(getLoginThrottleKey(req, username));
 }
 
 function cleanExpiredSessions() {
@@ -248,31 +326,13 @@ function normalizeStore(store) {
   }
 
   if (store.users.length === 0) {
-    const adminPass = createPasswordRecord('admin123');
-    const employeePass = createPasswordRecord('employee123');
-
-    store.users = [
-      {
-        id: `user-${crypto.randomUUID()}`,
-        username: 'admin',
-        name: 'System Admin',
-        role: 'admin',
-        salt: adminPass.salt,
-        passwordHash: adminPass.passwordHash,
-        active: true,
-        createdAt: getNowIso()
-      },
-      {
-        id: `user-${crypto.randomUUID()}`,
-        username: 'employee',
-        name: 'Team Employee',
-        role: 'employee',
-        salt: employeePass.salt,
-        passwordHash: employeePass.passwordHash,
-        active: true,
-        createdAt: getNowIso()
-      }
-    ];
+    const initialAdmin = createInitialAdminUser();
+    store.users = [initialAdmin.user];
+    initialAdminNotice = {
+      username: initialAdmin.user.username,
+      password: initialAdmin.plainPassword,
+      passwordSource: initialAdmin.passwordSource
+    };
 
     mutated = true;
   }
@@ -312,7 +372,7 @@ async function attachAuth(req, res, next) {
   const session = sessions.get(token);
   if (!session || session.expiresAt <= Date.now()) {
     sessions.delete(token);
-    clearSessionCookie(res);
+    clearSessionCookie(req, res);
     req.auth = { token: null, user: null };
     return next();
   }
@@ -322,7 +382,7 @@ async function attachAuth(req, res, next) {
     const user = store.users.find((entry) => entry.id === session.userId && entry.active);
     if (!user) {
       sessions.delete(token);
-      clearSessionCookie(res);
+      clearSessionCookie(req, res);
       req.auth = { token: null, user: null };
       return next();
     }
@@ -374,17 +434,23 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(400).json({ error: 'username and password are required.' });
   }
 
+  if (isLoginBlocked(req, username)) {
+    return res.status(429).json({ error: 'Too many login attempts. Please wait 15 minutes and try again.' });
+  }
+
   try {
     const store = await readStore();
     const user = store.users.find((entry) => entry.username === username && entry.active);
 
     if (!user || !verifyPassword(password, user.salt, user.passwordHash)) {
+      recordLoginFailure(req, username);
       return res.status(401).json({ error: 'Invalid username or password.' });
     }
 
     const token = crypto.randomUUID();
     sessions.set(token, { userId: user.id, expiresAt: Date.now() + SESSION_TTL_MS });
-    setSessionCookie(res, token);
+    clearLoginFailures(req, username);
+    setSessionCookie(req, res, token);
 
     return res.json({
       id: user.id,
@@ -404,13 +470,50 @@ app.get('/api/auth/me', (req, res) => {
   return res.json(req.auth.user);
 });
 
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+  const currentPassword = String(req.body.currentPassword || '');
+  const newPassword = String(req.body.newPassword || '');
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'currentPassword and newPassword are required.' });
+  }
+
+  if (newPassword.length < 10) {
+    return res.status(400).json({ error: 'New password must be at least 10 characters.' });
+  }
+
+  try {
+    const store = await readStore();
+    const user = store.users.find((entry) => entry.id === req.auth.user.id && entry.active);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    if (!verifyPassword(currentPassword, user.salt, user.passwordHash)) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    const nextPassword = createPasswordRecord(newPassword);
+    user.salt = nextPassword.salt;
+    user.passwordHash = nextPassword.passwordHash;
+    await writeStore(store);
+    return res.status(204).send();
+  } catch {
+    return res.status(500).json({ error: 'Unable to update password.' });
+  }
+});
+
 app.post('/api/auth/logout', (req, res) => {
   const token = req.auth?.token;
   if (token) {
     sessions.delete(token);
   }
-  clearSessionCookie(res);
+  clearSessionCookie(req, res);
   return res.status(204).send();
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, at: getNowIso() });
 });
 
 app.get('/api/data', requireRole('admin', 'employee'), async (req, res) => {
@@ -957,5 +1060,17 @@ app.get('/api/admin/invoices', requireRole('admin'), async (req, res) => {
 });
 
 app.listen(PORT, () => {
+  readStore()
+    .then(() => {
+      if (initialAdminNotice) {
+        console.log('Initial admin credentials created.');
+        console.log(`Username: ${initialAdminNotice.username}`);
+        console.log(`Password: ${initialAdminNotice.password}`);
+        console.log('Change this password after first login.');
+      }
+    })
+    .catch(() => {
+      // no-op
+    });
   console.log(`Server running at http://localhost:${PORT}`);
 });

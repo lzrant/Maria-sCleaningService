@@ -7,6 +7,7 @@ import {
   adminOnlyTabs,
   appShell,
   authScreen,
+  changePasswordBtn,
   clientSearchInput,
   clockDateInput,
   clockForm,
@@ -35,7 +36,7 @@ import { addBooking, printSchedule, renderBookingCalendar, renderSelectedDay, ui
 import { renderHome } from './pages/home.js';
 import { renderTimesheets, submitClockEntry } from './pages/timeClock.js';
 import { getActiveClients, getAllBookings, getMondayDateKey, isAdmin, toDateKey } from './utils.js';
-import { uiAlert, uiConfirm } from './ui.js';
+import { uiAlert, uiConfirm, uiPrompt } from './ui.js';
 
 function switchToApp() {
   authScreen.classList.add('hidden');
@@ -177,6 +178,43 @@ function setupAuthHandlers() {
       // no-op
     }
     switchToAuth();
+  });
+
+  changePasswordBtn.addEventListener('click', async () => {
+    if (!state.currentUser) return;
+
+    const currentPassword = await uiPrompt('Enter your current password.', '', {
+      label: 'Current password',
+      type: 'password'
+    });
+    if (!currentPassword) return;
+
+    const newPassword = await uiPrompt('Enter a new password.', '', {
+      label: 'New password',
+      type: 'password'
+    });
+    if (!newPassword) return;
+
+    const confirmPassword = await uiPrompt('Re-enter the new password.', '', {
+      label: 'Confirm password',
+      type: 'password'
+    });
+    if (!confirmPassword) return;
+
+    if (newPassword !== confirmPassword) {
+      await uiAlert('New password and confirmation do not match.');
+      return;
+    }
+
+    try {
+      await api('/api/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      await uiAlert('Password updated successfully.');
+    } catch (error) {
+      await uiAlert(error.message);
+    }
   });
 }
 
