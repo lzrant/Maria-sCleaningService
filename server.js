@@ -4,6 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const app = express();
+const HOST = process.env.HOST || '127.0.0.1';
 const PORT = process.env.PORT || 3000;
 const STORE_PATH = path.join(__dirname, 'data', 'store.json');
 const SESSION_COOKIE = 'session_token';
@@ -120,12 +121,16 @@ function getCookie(req, name) {
   return null;
 }
 
-function isSecureRequest(req) {
-  return req.secure || req.get('x-forwarded-proto') === 'https' || process.env.NODE_ENV === 'production';
+function shouldUseSecureCookies(req) {
+  if (String(process.env.COOKIE_SECURE || '').toLowerCase() === 'true') {
+    return true;
+  }
+
+  return req.secure || req.get('x-forwarded-proto') === 'https';
 }
 
 function setSessionCookie(req, res, token) {
-  const secureFlag = isSecureRequest(req) ? '; Secure' : '';
+  const secureFlag = shouldUseSecureCookies(req) ? '; Secure' : '';
   res.setHeader(
     'Set-Cookie',
     `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=${Math.floor(
@@ -135,7 +140,7 @@ function setSessionCookie(req, res, token) {
 }
 
 function clearSessionCookie(req, res) {
-  const secureFlag = isSecureRequest(req) ? '; Secure' : '';
+  const secureFlag = shouldUseSecureCookies(req) ? '; Secure' : '';
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=0`);
 }
 
@@ -1059,7 +1064,7 @@ app.get('/api/admin/invoices', requireRole('admin'), async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   readStore()
     .then(() => {
       if (initialAdminNotice) {
@@ -1072,5 +1077,5 @@ app.listen(PORT, () => {
     .catch(() => {
       // no-op
     });
-  console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`Server running at http://${HOST}:${PORT}`);
 });

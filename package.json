@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "start:private-phone": "HOST=0.0.0.0 node server.js"
   },
   "engines": {
     "node": ">=18"
