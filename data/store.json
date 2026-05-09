@@ -13,13 +13,6 @@
       "inStock": 12,
       "minimum": 15,
       "unit": "bottles"
-    },
-    {
-      "id": "inv-4",
-      "name": "Vacuum Bags",
-      "inStock": 17,
-      "minimum": 10,
-      "unit": "units"
     }
   ],
   "employeeSchedule": [
@@ -258,6 +251,16 @@
       "passwordHash": "bbe8555fa1fac89f43e7e0b0d93c75da9ae8de3d62cecb7d10652e7bb0bf455253ca053dbebcc09d38bbdc7d995f2f96c796e7361271a23be9095c5e7a1dd4be",
       "active": true,
       "createdAt": "2026-02-19T14:15:20.032Z"
+    },
+    {
+      "id": "user-7d92fef2-d5cf-4273-8d01-38df56d3aea8",
+      "username": "Antlzr10",
+      "name": "Antonio",
+      "role": "employee",
+      "salt": "ac66a1412803af69d02d00b5592dc84b",
+      "passwordHash": "49b618ce5e22608e030d263ac8bf4f84232b008b8f179b5792fa98bdda33e56a23c62d9f6ec7faacb8b116383936747f115bb6326c11111be75426a1cfde9914",
+      "active": true,
+      "createdAt": "2026-04-02T05:19:10.886Z"
     }
   ]
 }
