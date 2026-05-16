@@ -4,8 +4,9 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const app = express();
-const HOST = process.env.HOST || '127.0.0.1';
-const PORT = process.env.PORT || 3000;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const HOST = process.env.HOST || (IS_PRODUCTION ? '0.0.0.0' : 'localhost');
+const PORT = process.env.PORT || 3001;
 const STORE_PATH = path.join(__dirname, 'data', 'store.json');
 const SESSION_COOKIE = 'session_token';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
@@ -15,8 +16,11 @@ const LOGIN_WINDOW_MS = 1000 * 60 * 15;
 const LOGIN_MAX_ATTEMPTS = 8;
 let initialAdminNotice = null;
 
-app.set('trust proxy', 1);
-app.use(express.json());
+app.disable('x-powered-by');
+app.set('trust proxy', process.env.TRUST_PROXY === 'false' ? false : 1);
+app.use(express.json({ limit: '64kb' }));
+app.use(applySecurityHeaders);
+app.use(rejectCrossOriginStateChanges);
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -94,6 +98,48 @@ function toStringArray(value) {
   return value.map((item) => String(item).trim()).filter(Boolean);
 }
 
+function applySecurityHeaders(req, res, next) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "connect-src 'self'",
+      "img-src 'self' data:"
+    ].join('; ')
+  );
+  next();
+}
+
+function getRequestOrigin(req) {
+  const protocol = req.get('x-forwarded-proto') || req.protocol;
+  return `${protocol}://${req.get('host')}`;
+}
+
+function rejectCrossOriginStateChanges(req, res, next) {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    return next();
+  }
+
+  const origin = req.get('origin');
+  if (origin && origin !== getRequestOrigin(req)) {
+    return res.status(403).json({ error: 'Cross-origin requests are not allowed.' });
+  }
+
+  return next();
+}
+
 function createPasswordRecord(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
@@ -146,6 +192,10 @@ function clearSessionCookie(req, res) {
 
 function createInitialAdminUser() {
   const username = String(process.env.ADMIN_USERNAME || 'admin').trim() || 'admin';
+  if (IS_PRODUCTION && !process.env.ADMIN_PASSWORD) {
+    throw new Error('ADMIN_PASSWORD is required when NODE_ENV=production.');
+  }
+
   const generatedPassword = crypto.randomBytes(12).toString('base64url');
   const password = String(process.env.ADMIN_PASSWORD || generatedPassword);
   const pass = createPasswordRecord(password);
@@ -1064,18 +1114,40 @@ app.get('/api/admin/invoices', requireRole('admin'), async (req, res) => {
   }
 });
 
-app.listen(PORT, HOST, () => {
-  readStore()
-    .then(() => {
-      if (initialAdminNotice) {
-        console.log('Initial admin credentials created.');
-        console.log(`Username: ${initialAdminNotice.username}`);
+async function startServer() {
+  try {
+    await readStore();
+  } catch (error) {
+    console.error('Unable to initialize data store.');
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+    return;
+  }
+
+  const server = app.listen(PORT, HOST);
+
+  server.on('listening', () => {
+    if (initialAdminNotice) {
+      console.log('Initial admin account created.');
+      console.log(`Username: ${initialAdminNotice.username}`);
+
+      if (!IS_PRODUCTION && initialAdminNotice.passwordSource === 'generated') {
         console.log(`Password: ${initialAdminNotice.password}`);
-        console.log('Change this password after first login.');
+      } else {
+        console.log('Password source: ADMIN_PASSWORD environment variable.');
       }
-    })
-    .catch(() => {
-      // no-op
-    });
-  console.log(`Server running at http://${HOST}:${PORT}`);
-});
+
+      console.log('Change this password after first login.');
+    }
+
+    console.log(`Server running at http://${HOST}:${PORT}`);
+  });
+
+  server.on('error', (error) => {
+    console.error('Unable to start server.');
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}
+
+startServer();

@@ -2,36 +2,37 @@
 
 Private operations dashboard for Maria's Cleaning Service.
 
-## Recommended launch setup
+## Recommended Web Launch Setup
 
-For a private production-style launch that only you can access from your phone, use one of these:
+This app needs a Node server and a writable JSON data file at `data/store.json`, so static hosts like Vercel, Netlify, or GitHub Pages are not a good fit by themselves. Use a Node host that supports persistent disk storage, such as Render, Railway, Fly.io, a VPS, or your own machine behind a private tunnel.
 
-- Best: run the app on your Mac and access it from your phone over Tailscale.
-- Good: run the app on your Mac and access it only while both devices are on your home Wi-Fi.
+For a public web deployment, serve it only over HTTPS and set `NODE_ENV=production`, `ADMIN_PASSWORD`, and `COOKIE_SECURE=true`.
 
-Avoid static hosts like Vercel, Netlify, or GitHub Pages. This app needs a Node server and a writable JSON data file at `data/store.json`.
+## Environment Setup
 
-## Environment setup
+Create a local `.env` file based on `.env.example`, or pass the values inline when starting the server.
 
-Create a local `.env` file based on `.env.example`.
-
-Recommended values for a private launch:
+Recommended local values:
 
 ```bash
-HOST=0.0.0.0
-PORT=3000
+NODE_ENV=development
+HOST=localhost
+PORT=3001
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=use-a-long-unique-password
 COOKIE_SECURE=false
+TRUST_PROXY=true
 ```
 
 Notes:
 
-- `HOST=127.0.0.1` keeps the app only on the current machine.
-- `HOST=0.0.0.0` allows access from your phone on the same private network or over Tailscale.
+- `HOST=localhost` keeps the app on the current computer only.
+- In production, omit `HOST` unless your host requires it. The server binds to `0.0.0.0` when `NODE_ENV=production`.
+- `PORT=3001` makes the app available at `http://localhost:3001`.
 - Set `COOKIE_SECURE=true` only when you are serving the app over HTTPS.
+- `ADMIN_PASSWORD` is required in production. The app will refuse to start without it.
 
-## Run locally
+## Run On Localhost
 
 Install dependencies if needed:
 
@@ -39,56 +40,66 @@ Install dependencies if needed:
 npm install
 ```
 
-Run in development:
+Run in development with auto-restart:
 
 ```bash
 npm run dev
 ```
 
-Run for private phone access:
+Run normally on localhost:
 
 ```bash
-ADMIN_PASSWORD='your-strong-password' npm run start:private-phone
+npm run start:localhost
 ```
 
-Or with a custom username too:
+Or run with a custom username and password:
 
 ```bash
-HOST=0.0.0.0 PORT=3000 ADMIN_USERNAME='antonio' ADMIN_PASSWORD='your-strong-password' node server.js
+HOST=localhost PORT=3001 ADMIN_USERNAME='antonio' ADMIN_PASSWORD='your-strong-password' node server.js
 ```
 
-## Access from your phone
+Then open:
 
-### Option 1: Tailscale only
+```text
+http://localhost:3001
+```
 
-1. Install Tailscale on your Mac and iPhone.
-2. Sign into the same Tailscale account on both.
-3. Start the app with `HOST=0.0.0.0`.
-4. On your Mac, find its Tailscale IP or machine name in Tailscale.
-5. On your phone, open `http://YOUR-TAILSCALE-IP:3000` or `http://YOUR-MACHINE-NAME:3000`.
+## Run For Production
 
-This is the best option if you want the site reachable only by your own devices.
+Set these environment variables in your hosting provider:
 
-### Option 2: Home Wi-Fi only
+```bash
+NODE_ENV=production
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your-long-unique-password
+COOKIE_SECURE=true
+TRUST_PROXY=true
+```
 
-1. Make sure your Mac and phone are on the same Wi-Fi network.
-2. Start the app with `HOST=0.0.0.0`.
-3. Find your Mac's local IP address.
-4. Open `http://YOUR-MAC-IP:3000` on your phone.
+Use this start command:
 
-If you use this option, keep port forwarding disabled on your router.
+```bash
+npm start
+```
 
-## Important launch notes
+Before deploying, run:
 
-- All app data lives in `data/store.json`. Back it up.
+```bash
+npm run check
+```
+
+## Important Local Notes
+
+- All app data lives in `data/store.json`. Back it up before major changes.
+- Use persistent disk storage in production. Ephemeral filesystems can erase new bookings, clients, and time entries on restart.
 - Sessions are stored in server memory, so restarting the server signs users out.
-- Printing features are more desktop-friendly than phone-friendly.
+- Printing features work best from a desktop browser.
 - Keep this repository private because `data/store.json` can contain real client and staff information.
 
-## Suggested first private launch
+## Suggested First Local Run
 
 1. Set a strong admin password.
-2. Start with Tailscale access.
-3. Log in on your phone.
-4. Change the password again from inside the app after first login.
-5. Back up `data/store.json` before making major changes.
+2. Start the app with `npm run start:localhost`.
+3. Open `http://localhost:3001`.
+4. Sign in with the configured admin credentials.
+5. Change the password from inside the app after first login.

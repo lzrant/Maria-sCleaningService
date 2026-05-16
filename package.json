@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "start:private-phone": "HOST=0.0.0.0 node server.js"
+    "start:localhost": "HOST=localhost PORT=3001 node server.js",
+    "start:web": "NODE_ENV=production node server.js",
+    "check": "node --check server.js"
   },
   "engines": {
     "node": ">=18"
