@@ -19,6 +19,9 @@ let initialAdminNotice = null;
 app.disable('x-powered-by');
 app.set('trust proxy', process.env.TRUST_PROXY === 'false' ? false : 1);
 app.use(express.json({ limit: '64kb' }));
+
+
+
 app.use(applySecurityHeaders);
 app.use(rejectCrossOriginStateChanges);
 app.get('/', (req, res) => {
@@ -1114,40 +1117,6 @@ app.get('/api/admin/invoices', requireRole('admin'), async (req, res) => {
   }
 });
 
-async function startServer() {
-  try {
-    await readStore();
-  } catch (error) {
-    console.error('Unable to initialize data store.');
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-    return;
-  }
-
-  const server = app.listen(PORT, HOST);
-
-  server.on('listening', () => {
-    if (initialAdminNotice) {
-      console.log('Initial admin account created.');
-      console.log(`Username: ${initialAdminNotice.username}`);
-
-      if (!IS_PRODUCTION && initialAdminNotice.passwordSource === 'generated') {
-        console.log(`Password: ${initialAdminNotice.password}`);
-      } else {
-        console.log('Password source: ADMIN_PASSWORD environment variable.');
-      }
-
-      console.log('Change this password after first login.');
-    }
-
-    console.log(`Server running at http://${HOST}:${PORT}`);
-  });
-
-  server.on('error', (error) => {
-    console.error('Unable to start server.');
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-  });
-}
-
-startServer();
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
