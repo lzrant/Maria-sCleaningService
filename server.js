@@ -11,6 +11,13 @@ const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 const sessions = new Map();
 
 app.use(express.json());
+
+// Simple request logger to help diagnose unresponsive requests
+app.use((req, res, next) => {
+  console.log('[REQ]', req.method, req.url);
+  next();
+});
+
 app.use(express.static(__dirname));
 
 const inventorySchema = ['name', 'inStock', 'minimum', 'unit'];
@@ -958,4 +965,9 @@ app.get('/api/admin/invoices', requireRole('admin'), async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
+});
+
+// health check route for debugging
+app.get('/ping', (req, res) => {
+  res.send('ok');
 });
