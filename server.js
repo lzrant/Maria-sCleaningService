@@ -224,8 +224,17 @@ function getCookie(req, name) {
 }
 
 function shouldUseSecureCookies(req) {
-  if (String(process.env.COOKIE_SECURE || '').toLowerCase() === 'true') {
+  const cookieSecure = String(process.env.COOKIE_SECURE || '').toLowerCase();
+  if (cookieSecure === 'true') {
     return true;
+  }
+
+  if (IS_PRODUCTION) {
+    return true;
+  }
+
+  if (cookieSecure === 'false') {
+    return false;
   }
 
   return req.secure || req.get('x-forwarded-proto') === 'https';

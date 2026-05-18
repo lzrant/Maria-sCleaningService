@@ -48,7 +48,7 @@ Open `http://localhost:3001`.
 
 `ADMIN_PASSWORD`: Optional in development. Required in production. Use a long unique password and do not commit it.
 
-`COOKIE_SECURE`: Set to `true` only when the app is served over HTTPS.
+`COOKIE_SECURE`: Production always uses secure cookies. Set `true` when the app is served over HTTPS; use `false` only for local HTTP testing.
 
 `TRUST_PROXY`: Keep `true` behind Render, Railway, Fly.io, Nginx, or another HTTPS proxy.
 
