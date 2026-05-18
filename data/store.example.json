@@ -21,36 +21,6 @@
       "passwordHash": "30106c9221c995801dfafae5e9d8fddc34fe237218290d811456ab913d6cfafccbc0f8420274295737e8682403ec7870f057b72a2771946f880220040d07ec91",
       "active": true,
       "createdAt": "2026-02-19T01:51:37.870Z"
-    },
-    {
-      "id": "user-e4bf31e0-5d62-4631-bf77-282a1a89b7d4",
-      "username": "employee",
-      "name": "Team Employee",
-      "role": "employee",
-      "salt": "d47c8fe88d5502a6d69b1c0b8a5d8242",
-      "passwordHash": "a106034a897d24ae62a602d28950a3d95c04c6e91545a70cf792812cc28db2d623e58f8ba25b939b8db1b158744bd0f3c0d2bae48a858a26f63f971dbac3b117",
-      "active": true,
-      "createdAt": "2026-02-19T01:51:37.873Z"
-    },
-    {
-      "id": "user-13573190-5720-4182-b569-382263b5c7c6",
-      "username": "MariaG",
-      "name": "Maria G Ayllon",
-      "role": "employee",
-      "salt": "748fd19006894b76ba14bd3eece91616",
-      "passwordHash": "bbe8555fa1fac89f43e7e0b0d93c75da9ae8de3d62cecb7d10652e7bb0bf455253ca053dbebcc09d38bbdc7d995f2f96c796e7361271a23be9095c5e7a1dd4be",
-      "active": true,
-      "createdAt": "2026-02-19T14:15:20.032Z"
-    },
-    {
-      "id": "user-7d92fef2-d5cf-4273-8d01-38df56d3aea8",
-      "username": "Antlzr10",
-      "name": "Antonio",
-      "role": "employee",
-      "salt": "ac66a1412803af69d02d00b5592dc84b",
-      "passwordHash": "49b618ce5e22608e030d263ac8bf4f84232b008b8f179b5792fa98bdda33e56a23c62d9f6ec7faacb8b116383936747f115bb6326c11111be75426a1cfde9914",
-      "active": true,
-      "createdAt": "2026-04-02T05:19:10.886Z"
-    }
+    }  
   ]
 }
