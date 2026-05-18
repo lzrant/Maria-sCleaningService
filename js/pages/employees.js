@@ -20,7 +20,10 @@ export function renderEmployees() {
         <td>${escapeHtml(entry.name)}</td>
         <td>${escapeHtml(entry.username)}</td>
         <td>${entry.active ? '<span class="pill pill-ok">Active</span>' : '<span class="pill pill-warn">Inactive</span>'}</td>
-        <td><button class="link-btn" data-action="delete-employee" data-id="${escapeHtml(entry.id)}">Delete</button></td>
+        <td>
+          <button class="link-btn" data-action="reset-employee-password" data-id="${escapeHtml(entry.id)}">Reset Password</button>
+          <button class="link-btn" data-action="delete-employee" data-id="${escapeHtml(entry.id)}">Delete</button>
+        </td>
       </tr>
     `
   );

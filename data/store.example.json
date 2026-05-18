@@ -1,0 +1,15 @@
+{
+  "inventory": [],
+  "employeeSchedule": [],
+  "houseOfficeSchedule": {
+    "houses": [],
+    "offices": []
+  },
+  "clients": [],
+  "timesheets": [],
+  "archived": {
+    "clients": [],
+    "bookings": []
+  },
+  "users": []
+}

@@ -342,6 +342,21 @@ function setupActionDelegation() {
         await api(`/api/admin/employees/${id}`, { method: 'DELETE' });
       }
 
+      if (action === 'reset-employee-password') {
+        const newPassword = await uiPrompt('Enter the new temporary password.', '', {
+          label: 'Temporary password',
+          type: 'password'
+        });
+        if (!newPassword) return;
+
+        await api(`/api/admin/employees/${id}/password`, {
+          method: 'PATCH',
+          body: JSON.stringify({ newPassword })
+        });
+
+        await uiAlert('Employee password reset.');
+      }
+
       if (action === 'delete-booking') {
         const type = actionElement.dataset.type;
         if (!type) return;

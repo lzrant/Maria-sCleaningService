@@ -1,105 +1,128 @@
 # Maria's Cleaning Service
 
-Private operations dashboard for Maria's Cleaning Service.
+Private operations dashboard for Maria's Cleaning Service. It includes login, admin and employee roles, client records, job scheduling, staff assignments, time clock entries, CSV payroll export, and weekly invoice printing.
 
-## Recommended Web Launch Setup
+## Local Setup
 
-This app needs a Node server and a writable JSON data file at `data/store.json`, so static hosts like Vercel, Netlify, or GitHub Pages are not a good fit by themselves. Use a Node host that supports persistent disk storage, such as Render, Railway, Fly.io, a VPS, or your own machine behind a private tunnel.
+Install dependencies:
 
-For a public web deployment, serve it only over HTTPS and set `NODE_ENV=production`, `ADMIN_PASSWORD`, and `COOKIE_SECURE=true`.
+```bash
+npm install
+```
 
-## Environment Setup
+Copy the environment template and fill in values:
 
-Create a local `.env` file based on `.env.example`, or pass the values inline when starting the server.
+```bash
+cp .env.example .env
+```
 
-Recommended local values:
+Recommended local `.env`:
 
 ```bash
 NODE_ENV=development
 HOST=localhost
 PORT=3001
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=use-a-long-unique-password
+ADMIN_PASSWORD=
 COOKIE_SECURE=false
 TRUST_PROXY=true
 ```
 
-Notes:
-
-- `HOST=localhost` keeps the app on the current computer only.
-- In production, omit `HOST` unless your host requires it. The server binds to `0.0.0.0` when `NODE_ENV=production`.
-- `PORT=3001` makes the app available at `http://localhost:3001`.
-- Set `COOKIE_SECURE=true` only when you are serving the app over HTTPS.
-- `ADMIN_PASSWORD` is required in production. The app will refuse to start without it.
-
-## Run On Localhost
-
-Install dependencies if needed:
-
-```bash
-npm install
-```
-
-Run in development with auto-restart:
-
-```bash
-npm run dev
-```
-
-Run normally on localhost:
+Start locally:
 
 ```bash
 npm run start:localhost
 ```
 
-Or run with a custom username and password:
+Open `http://localhost:3001`.
+
+## Environment Variables
+
+`PORT`: Server port. Defaults to `3001`.
+
+`HOST`: Bind address. Use `localhost` for local-only development. In production, leave unset unless the host requires it.
+
+`NODE_ENV`: Use `production` on Render, Railway, Fly.io, or a VPS.
+
+`ADMIN_USERNAME`: Username for the bootstrap admin account when `data/store.json` has no users.
+
+`ADMIN_PASSWORD`: Optional in development. Required in production. Use a long unique password and do not commit it.
+
+`COOKIE_SECURE`: Set to `true` only when the app is served over HTTPS.
+
+`TRUST_PROXY`: Keep `true` behind Render, Railway, Fly.io, Nginx, or another HTTPS proxy.
+
+`STORE_PATH`: Optional override for the data file path. Leave unset for normal use.
+
+## First Admin Setup
+
+The app creates the first admin only when `data/store.json` has no users. For Maria's launch:
+
+1. Set `ADMIN_USERNAME` to Maria's admin username.
+2. Set `ADMIN_PASSWORD` in the host's private environment settings.
+3. Start the app once so the admin account is created.
+4. Sign in and use **Change Password** if Maria wants to rotate it.
+5. Add employee accounts from the Employees screen and require each employee to change their password after first login.
+
+Do not put Maria's real password in `README.md`, `.env.example`, screenshots, or chat messages.
+
+## Data Store
+
+Runtime data lives in `data/store.json`, which is intentionally ignored by git. New clones can start from `data/store.example.json`, or the server will create an empty store on first run.
+
+This JSON store now uses serialized updates and atomic file replacement to reduce local data corruption risk, but it is still a bridge. Before multiple people use the app heavily at the same time, migrate to SQLite or Postgres.
+
+## Backups
+
+Create a manual backup:
 
 ```bash
-HOST=localhost PORT=3001 ADMIN_USERNAME='antonio' ADMIN_PASSWORD='your-strong-password' node server.js
+npm run backup
 ```
 
-Then open:
+By default, backups are written to `backups/store-<timestamp>.json`. Schedule the same command with cron, Render Cron Jobs, Railway cron, or host snapshots. Keep at least daily backups and test restore by copying a backup back to `data/store.json` in a staging or local copy.
 
-```text
-http://localhost:3001
-```
+## Production Deploy
 
-## Run For Production
+Use a Node host with persistent disk storage, such as Render with a persistent disk, Railway with a volume, Fly.io volume storage, or a VPS. Static-only hosts are not enough.
 
-Set these environment variables in your hosting provider:
+Required production settings:
 
 ```bash
 NODE_ENV=production
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=your-long-unique-password
+ADMIN_USERNAME=<maria-admin-username>
+ADMIN_PASSWORD=<long-private-password>
 COOKIE_SECURE=true
 TRUST_PROXY=true
 ```
 
-Use this start command:
+Start command:
 
 ```bash
 npm start
 ```
 
-Before deploying, run:
+Ship only behind HTTPS. Confirm the platform preserves `data/store.json` across restarts, or migrate to SQLite/Postgres before launch.
+
+## Pre-Launch Checklist
+
+Run:
 
 ```bash
+npm audit fix
 npm run check
+npm start
 ```
 
-## Important Local Notes
+Smoke-test on desktop and a real phone:
 
-- All app data lives in `data/store.json`. Back it up before major changes.
-- Use persistent disk storage in production. Ephemeral filesystems can erase new bookings, clients, and time entries on restart.
-- Sessions are stored in server memory, so restarting the server signs users out.
-- Printing features work best from a desktop browser.
-- Keep this repository private because `data/store.json` can contain real client and staff information.
-
-## Suggested First Local Run
-
-1. Set a strong admin password.
-2. Start the app with `npm run start:localhost`.
-3. Open `http://localhost:3001`.
-4. Sign in with the configured admin credentials.
-5. Change the password from inside the app after first login.
+- Login and logout
+- Change your password
+- Add a client
+- Schedule a house or office cleaning
+- Assign staff
+- Mark a job cleaned
+- Employee clock-in from the Time Clock tab
+- Export timesheet CSV
+- Print weekly invoices
+- Visit `/ping` and confirm it returns `{ "ok": true }`

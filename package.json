@@ -9,6 +9,7 @@
     "dev": "node --watch server.js",
     "start:localhost": "HOST=localhost PORT=3001 node server.js",
     "start:web": "NODE_ENV=production node server.js",
+    "backup": "node scripts/backup-store.js",
     "check": "node --check server.js"
   },
   "engines": {

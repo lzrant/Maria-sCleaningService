@@ -1,13 +1,16 @@
 const express = require('express');
+const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+
+loadEnvFile();
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const HOST = process.env.HOST || (IS_PRODUCTION ? '0.0.0.0' : 'localhost');
 const PORT = process.env.PORT || 3001;
-const STORE_PATH = path.join(__dirname, 'data', 'store.json');
+const STORE_PATH = process.env.STORE_PATH || path.join(__dirname, 'data', 'store.json');
 const SESSION_COOKIE = 'session_token';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 const sessions = new Map();
@@ -15,6 +18,7 @@ const loginAttempts = new Map();
 const LOGIN_WINDOW_MS = 1000 * 60 * 15;
 const LOGIN_MAX_ATTEMPTS = 8;
 let initialAdminNotice = null;
+let storeOperation = Promise.resolve();
 
 app.disable('x-powered-by');
 app.set('trust proxy', process.env.TRUST_PROXY === 'false' ? false : 1);
@@ -34,11 +38,48 @@ app.get('/script.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'script.js'));
 });
 app.use('/js', express.static(path.join(__dirname, 'js')));
+app.get(['/ping', '/api/health'], (req, res) => {
+  res.json({ ok: true, at: getNowIso() });
+});
 
 const inventorySchema = ['name', 'inStock', 'minimum', 'unit'];
 const employeeSchema = ['time', 'employee', 'details'];
 const bookingSchema = ['date', 'time', 'location', 'notes'];
 const clientSchema = ['name'];
+
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function loadEnvFile() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fsSync.existsSync(envPath)) return;
+
+  const lines = fsSync.readFileSync(envPath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const separator = trimmed.indexOf('=');
+    if (separator === -1) continue;
+
+    const key = trimmed.slice(0, separator).trim();
+    let value = trimmed.slice(separator + 1).trim();
+    if (!key || process.env[key] !== undefined) continue;
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    process.env[key] = value;
+  }
+}
 
 function getNowIso() {
   return new Date().toISOString();
@@ -99,6 +140,18 @@ function toNumber(value, fallback = 0) {
 function toStringArray(value) {
   if (!Array.isArray(value)) return [];
   return value.map((item) => String(item).trim()).filter(Boolean);
+}
+
+function httpError(status, message) {
+  return new HttpError(status, message);
+}
+
+function sendRouteError(res, error, fallbackMessage) {
+  if (error instanceof HttpError) {
+    return res.status(error.status).json({ error: error.message });
+  }
+
+  return res.status(500).json({ error: fallbackMessage });
 }
 
 function applySecurityHeaders(req, res, next) {
@@ -398,13 +451,37 @@ function normalizeStore(store) {
   return { store, mutated };
 }
 
+function createEmptyStore() {
+  return {
+    inventory: [],
+    employeeSchedule: [],
+    houseOfficeSchedule: { houses: [], offices: [] },
+    clients: [],
+    timesheets: [],
+    archived: { clients: [], bookings: [] },
+    users: []
+  };
+}
+
 async function writeStore(store) {
-  await fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
+  await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
+  const tempPath = `${STORE_PATH}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tempPath, JSON.stringify(store, null, 2), 'utf8');
+  await fs.rename(tempPath, STORE_PATH);
 }
 
 async function readStore() {
-  const data = await fs.readFile(STORE_PATH, 'utf8');
-  const parsed = JSON.parse(data);
+  let parsed;
+  try {
+    const data = await fs.readFile(STORE_PATH, 'utf8');
+    parsed = JSON.parse(data);
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+    parsed = createEmptyStore();
+  }
+
   const normalized = normalizeStore(parsed);
 
   if (normalized.mutated) {
@@ -412,6 +489,18 @@ async function readStore() {
   }
 
   return normalized.store;
+}
+
+async function updateStore(mutator) {
+  const operation = storeOperation.then(async () => {
+    const store = await readStore();
+    const result = await mutator(store);
+    await writeStore(store);
+    return result;
+  });
+
+  storeOperation = operation.catch(() => {});
+  return operation;
 }
 
 function findClient(store, clientId) {
@@ -541,23 +630,23 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   }
 
   try {
-    const store = await readStore();
-    const user = store.users.find((entry) => entry.id === req.auth.user.id && entry.active);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found.' });
-    }
+    await updateStore((store) => {
+      const user = store.users.find((entry) => entry.id === req.auth.user.id && entry.active);
+      if (!user) {
+        throw httpError(404, 'User not found.');
+      }
 
-    if (!verifyPassword(currentPassword, user.salt, user.passwordHash)) {
-      return res.status(401).json({ error: 'Current password is incorrect.' });
-    }
+      if (!verifyPassword(currentPassword, user.salt, user.passwordHash)) {
+        throw httpError(401, 'Current password is incorrect.');
+      }
 
-    const nextPassword = createPasswordRecord(newPassword);
-    user.salt = nextPassword.salt;
-    user.passwordHash = nextPassword.passwordHash;
-    await writeStore(store);
+      const nextPassword = createPasswordRecord(newPassword);
+      user.salt = nextPassword.salt;
+      user.passwordHash = nextPassword.passwordHash;
+    });
     return res.status(204).send();
-  } catch {
-    return res.status(500).json({ error: 'Unable to update password.' });
+  } catch (error) {
+    return sendRouteError(res, error, 'Unable to update password.');
   }
 });
 
@@ -568,10 +657,6 @@ app.post('/api/auth/logout', (req, res) => {
   }
   clearSessionCookie(req, res);
   return res.status(204).send();
-});
-
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, at: getNowIso() });
 });
 
 app.get('/api/data', requireRole('admin', 'employee'), async (req, res) => {
@@ -614,10 +699,10 @@ app.post('/api/admin/employees', requireRole('admin'), async (req, res) => {
   }
 
   try {
-    const store = await readStore();
+    const employeeResponse = await updateStore((store) => {
     const exists = store.users.some((user) => user.username.toLowerCase() === username.toLowerCase());
     if (exists) {
-      return res.status(400).json({ error: 'Username already exists.' });
+      throw httpError(400, 'Username already exists.');
     }
 
     const pass = createPasswordRecord(password);
@@ -633,17 +718,19 @@ app.post('/api/admin/employees', requireRole('admin'), async (req, res) => {
     };
 
     store.users.push(employee);
-    await writeStore(store);
 
-    res.status(201).json({
+      return {
       id: employee.id,
       username: employee.username,
       name: employee.name,
       role: employee.role,
       active: employee.active
+      };
     });
-  } catch {
-    res.status(500).json({ error: 'Unable to create employee.' });
+
+    res.status(201).json(employeeResponse);
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to create employee.');
   }
 });
 
@@ -653,11 +740,11 @@ app.delete('/api/admin/employees/:id', requireRole('admin'), async (req, res) =>
       return res.status(400).json({ error: 'You cannot remove your own account.' });
     }
 
-    const store = await readStore();
+    await updateStore((store) => {
     const index = store.users.findIndex((user) => user.id === req.params.id && user.role === 'employee');
 
     if (index === -1) {
-      return res.status(404).json({ error: 'Employee not found.' });
+        throw httpError(404, 'Employee not found.');
     }
 
     const employee = store.users[index];
@@ -675,11 +762,34 @@ app.delete('/api/admin/employees/:id', requireRole('admin'), async (req, res) =>
         sessions.delete(token);
       }
     }
-
-    await writeStore(store);
+    });
     return res.status(204).send();
-  } catch {
-    return res.status(500).json({ error: 'Unable to delete employee.' });
+  } catch (error) {
+    return sendRouteError(res, error, 'Unable to delete employee.');
+  }
+});
+
+app.patch('/api/admin/employees/:id/password', requireRole('admin'), async (req, res) => {
+  const newPassword = String(req.body.newPassword || '');
+  if (newPassword.length < 10) {
+    return res.status(400).json({ error: 'New password must be at least 10 characters.' });
+  }
+
+  try {
+    await updateStore((store) => {
+      const employee = store.users.find((user) => user.id === req.params.id && user.role === 'employee' && user.active);
+      if (!employee) {
+        throw httpError(404, 'Employee not found.');
+      }
+
+      const nextPassword = createPasswordRecord(newPassword);
+      employee.salt = nextPassword.salt;
+      employee.passwordHash = nextPassword.passwordHash;
+    });
+
+    return res.status(204).send();
+  } catch (error) {
+    return sendRouteError(res, error, 'Unable to reset employee password.');
   }
 });
 
@@ -709,7 +819,7 @@ app.post('/api/clients', requireRole('admin'), async (req, res) => {
   }
 
   try {
-    const store = await readStore();
+    const client = await updateStore((store) => {
     const client = {
       id: `client-${crypto.randomUUID()}`,
       name: String(req.body.name).trim(),
@@ -724,20 +834,21 @@ app.post('/api/clients', requireRole('admin'), async (req, res) => {
     };
 
     store.clients.push(client);
-    await writeStore(store);
+      return client;
+    });
     res.status(201).json(client);
-  } catch {
-    res.status(500).json({ error: 'Unable to create client.' });
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to create client.');
   }
 });
 
 app.delete('/api/clients/:id', requireRole('admin'), async (req, res) => {
   try {
-    const store = await readStore();
+    await updateStore((store) => {
     const clientIndex = store.clients.findIndex((client) => client.id === req.params.id && client.status === 'active');
 
     if (clientIndex === -1) {
-      return res.status(404).json({ error: 'Client not found.' });
+        throw httpError(404, 'Client not found.');
     }
 
     const client = store.clients[clientIndex];
@@ -765,10 +876,10 @@ app.delete('/api/clients/:id', requireRole('admin'), async (req, res) => {
       store.houseOfficeSchedule[type] = keep;
     }
 
-    await writeStore(store);
+    });
     res.status(204).send();
-  } catch {
-    res.status(500).json({ error: 'Unable to delete client.' });
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to delete client.');
   }
 });
 
@@ -779,7 +890,7 @@ app.post('/api/inventory', requireRole('admin'), async (req, res) => {
   }
 
   try {
-    const store = await readStore();
+    const item = await updateStore((store) => {
     const item = {
       id: `inv-${crypto.randomUUID()}`,
       name: String(req.body.name).trim(),
@@ -789,27 +900,28 @@ app.post('/api/inventory', requireRole('admin'), async (req, res) => {
     };
 
     store.inventory.push(item);
-    await writeStore(store);
+      return item;
+    });
     res.status(201).json(item);
-  } catch {
-    res.status(500).json({ error: 'Unable to create inventory item.' });
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to create inventory item.');
   }
 });
 
 app.delete('/api/inventory/:id', requireRole('admin'), async (req, res) => {
   try {
-    const store = await readStore();
+    await updateStore((store) => {
     const before = store.inventory.length;
     store.inventory = store.inventory.filter((item) => item.id !== req.params.id);
 
     if (store.inventory.length === before) {
-      return res.status(404).json({ error: 'Inventory item not found.' });
+        throw httpError(404, 'Inventory item not found.');
     }
 
-    await writeStore(store);
+    });
     res.status(204).send();
-  } catch {
-    res.status(500).json({ error: 'Unable to delete inventory item.' });
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to delete inventory item.');
   }
 });
 
@@ -820,7 +932,7 @@ app.post('/api/employee-schedule', requireRole('admin'), async (req, res) => {
   }
 
   try {
-    const store = await readStore();
+    const shift = await updateStore((store) => {
     const shift = {
       id: `emp-${crypto.randomUUID()}`,
       date: isDateKey(req.body.date) ? String(req.body.date) : getTodayDateKey(),
@@ -830,27 +942,28 @@ app.post('/api/employee-schedule', requireRole('admin'), async (req, res) => {
     };
 
     store.employeeSchedule.push(shift);
-    await writeStore(store);
+      return shift;
+    });
     res.status(201).json(shift);
-  } catch {
-    res.status(500).json({ error: 'Unable to create employee schedule item.' });
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to create employee schedule item.');
   }
 });
 
 app.delete('/api/employee-schedule/:id', requireRole('admin'), async (req, res) => {
   try {
-    const store = await readStore();
+    await updateStore((store) => {
     const before = store.employeeSchedule.length;
     store.employeeSchedule = store.employeeSchedule.filter((item) => item.id !== req.params.id);
 
     if (store.employeeSchedule.length === before) {
-      return res.status(404).json({ error: 'Employee schedule item not found.' });
+        throw httpError(404, 'Employee schedule item not found.');
     }
 
-    await writeStore(store);
+    });
     res.status(204).send();
-  } catch {
-    res.status(500).json({ error: 'Unable to delete employee schedule item.' });
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to delete employee schedule item.');
   }
 });
 
@@ -870,13 +983,13 @@ app.post('/api/house-office-schedule/:type', requireRole('admin'), async (req, r
   }
 
   try {
-    const store = await readStore();
+    const entry = await updateStore((store) => {
 
     let client = null;
     if (req.body.clientId) {
       client = findClient(store, String(req.body.clientId));
       if (!client) {
-        return res.status(400).json({ error: 'clientId does not reference an active client.' });
+          throw httpError(400, 'clientId does not reference an active client.');
       }
     }
 
@@ -894,10 +1007,11 @@ app.post('/api/house-office-schedule/:type', requireRole('admin'), async (req, r
     };
 
     store.houseOfficeSchedule[type].push(entry);
-    await writeStore(store);
+      return entry;
+    });
     res.status(201).json(entry);
-  } catch {
-    res.status(500).json({ error: 'Unable to create booking item.' });
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to create booking item.');
   }
 });
 
@@ -908,18 +1022,19 @@ app.patch('/api/house-office-schedule/:type/:id/assignment', requireRole('admin'
   }
 
   try {
-    const store = await readStore();
+    const booking = await updateStore((store) => {
     const booking = store.houseOfficeSchedule[type].find((item) => item.id === id);
 
     if (!booking) {
-      return res.status(404).json({ error: 'Booking item not found.' });
+        throw httpError(404, 'Booking item not found.');
     }
 
     booking.assignedEmployees = toStringArray(req.body.assignedEmployees);
-    await writeStore(store);
+      return booking;
+    });
     res.json(booking);
-  } catch {
-    res.status(500).json({ error: 'Unable to assign employees.' });
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to assign employees.');
   }
 });
 
@@ -930,19 +1045,20 @@ app.patch('/api/house-office-schedule/:type/:id/cleaned', requireRole('admin', '
   }
 
   try {
-    const store = await readStore();
+    const booking = await updateStore((store) => {
     const booking = store.houseOfficeSchedule[type].find((item) => item.id === id);
 
     if (!booking) {
-      return res.status(404).json({ error: 'Booking item not found.' });
+        throw httpError(404, 'Booking item not found.');
     }
 
     booking.cleaned = Boolean(req.body.cleaned);
     booking.cleanedAt = booking.cleaned ? getNowIso() : null;
-    await writeStore(store);
+      return booking;
+    });
     res.json(booking);
-  } catch {
-    res.status(500).json({ error: 'Unable to update cleaning status.' });
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to update cleaning status.');
   }
 });
 
@@ -953,23 +1069,24 @@ app.delete('/api/house-office-schedule/:type/:id', requireRole('admin'), async (
   }
 
   try {
-    const store = await readStore();
+    await updateStore((store) => {
     const before = store.houseOfficeSchedule[type].length;
     store.houseOfficeSchedule[type] = store.houseOfficeSchedule[type].filter((item) => item.id !== id);
 
     if (store.houseOfficeSchedule[type].length === before) {
-      return res.status(404).json({ error: 'Booking item not found.' });
+        throw httpError(404, 'Booking item not found.');
     }
 
-    await writeStore(store);
+    });
     res.status(204).send();
-  } catch {
-    res.status(500).json({ error: 'Unable to delete booking item.' });
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to delete booking item.');
   }
 });
 
-app.post('/api/employee/clock', requireRole('admin'), async (req, res) => {
-  const employeeId = String(req.body.employeeId || '').trim();
+app.post('/api/employee/clock', requireRole('admin', 'employee'), async (req, res) => {
+  const employeeId =
+    req.auth.user.role === 'admin' ? String(req.body.employeeId || '').trim() : req.auth.user.id;
   const date = String(req.body.date || '').trim();
   const hours = toNumber(req.body.hours, NaN);
 
@@ -986,10 +1103,10 @@ app.post('/api/employee/clock', requireRole('admin'), async (req, res) => {
   }
 
   try {
-    const store = await readStore();
+    const entry = await updateStore((store) => {
     const employee = store.users.find((user) => user.id === employeeId && user.role === 'employee' && user.active);
     if (!employee) {
-      return res.status(400).json({ error: 'employeeId does not reference an active employee.' });
+        throw httpError(400, 'employeeId does not reference an active employee.');
     }
 
     const entry = {
@@ -1003,10 +1120,11 @@ app.post('/api/employee/clock', requireRole('admin'), async (req, res) => {
     };
 
     store.timesheets.push(entry);
-    await writeStore(store);
+      return entry;
+    });
     res.status(201).json(entry);
-  } catch {
-    res.status(500).json({ error: 'Unable to clock hours.' });
+  } catch (error) {
+    sendRouteError(res, error, 'Unable to clock hours.');
   }
 });
 
@@ -1117,6 +1235,59 @@ app.get('/api/admin/invoices', requireRole('admin'), async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API route not found.' });
+});
+
+app.use((req, res) => {
+  res.status(404).send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Page unavailable</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <section class="auth-screen">
+      <div class="auth-card">
+        <h2>Page unavailable</h2>
+        <p>The dashboard is running, but this page does not exist.</p>
+        <a class="action-btn" href="/">Back to dashboard</a>
+      </div>
+    </section>
+  </body>
+</html>`);
+});
+
+app.use((error, req, res, next) => {
+  if (res.headersSent) {
+    return next(error);
+  }
+
+  if (req.path.startsWith('/api')) {
+    return res.status(500).json({ error: 'Server unavailable. Please try again.' });
+  }
+
+  return res.status(500).send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Server unavailable</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <section class="auth-screen">
+      <div class="auth-card">
+        <h2>Server unavailable</h2>
+        <p>Please refresh in a moment. If this continues, contact support.</p>
+      </div>
+    </section>
+  </body>
+</html>`);
+});
+
+app.listen(PORT, HOST, () => {
+  console.log(`Server running at http://${HOST}:${PORT}`);
 });

@@ -45,14 +45,12 @@ export function renderTimesheets() {
 }
 
 export async function submitClockEntry() {
-  if (!isAdmin()) return false;
-
-  const employeeId = clockEmployeeSelect.value;
+  const employeeId = isAdmin() ? clockEmployeeSelect.value : null;
   const date = clockDateInput.value;
   const hours = Number(clockHoursInput.value);
   const notes = clockNotesInput.value.trim();
 
-  if (!employeeId) {
+  if (isAdmin() && !employeeId) {
     await uiAlert('Please select an employee.');
     return false;
   }

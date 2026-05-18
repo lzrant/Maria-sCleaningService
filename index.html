@@ -58,7 +58,7 @@
           <button class="tab" data-tab="inventory" data-admin-only="true">Inventory</button>
           <button class="tab" data-tab="employee-schedule">Employee Schedule</button>
           <button class="tab" data-tab="house-office-schedule">House/Office Schedule</button>
-          <button class="tab" data-tab="time-clock" data-admin-only="true">Time Clock</button>
+          <button class="tab" data-tab="time-clock">Time Clock</button>
         </nav>
 
         <section class="panel-wrap">
@@ -202,10 +202,10 @@
             <div class="section-header">
               <h2>Time Clock</h2>
             </div>
-            <form id="clock-form" class="mini-form admin-only">
-              <label>
+            <form id="clock-form" class="mini-form">
+              <label class="admin-only">
                 Employee
-                <select id="clock-employee" required></select>
+                <select id="clock-employee"></select>
               </label>
               <label>
                 Date
