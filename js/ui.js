@@ -16,6 +16,7 @@ function createModalField(field) {
   if (field.type === 'select') {
     const select = document.createElement('select');
     select.name = field.name;
+    select.required = Boolean(field.required);
     (field.options || []).forEach((option) => {
       const opt = document.createElement('option');
       opt.value = option.value;
@@ -58,6 +59,10 @@ function createModalField(field) {
   control.name = field.name;
   control.value = field.value || '';
   control.placeholder = field.placeholder || '';
+  control.required = Boolean(field.required);
+  if (field.min !== undefined) control.min = field.min;
+  if (field.max !== undefined) control.max = field.max;
+  if (field.step !== undefined) control.step = field.step;
   if (field.type && field.type !== 'textarea') {
     control.type = field.type;
   }
@@ -112,6 +117,10 @@ export function showModal({
 
     uiModalCancelBtn.onclick = () => closeModal({ confirmed: false, values: {} });
     uiModalConfirmBtn.onclick = () => {
+      if (!uiModalForm.reportValidity()) {
+        return;
+      }
+
       const values = {};
       fields.forEach((field) => {
         if (field.type === 'checkbox-group') {

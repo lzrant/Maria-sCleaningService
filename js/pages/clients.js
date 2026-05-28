@@ -1,9 +1,9 @@
 import { clientsTableBody, invoiceWeekStartInput } from '../dom.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { buildRepeatDates, askRepeatSettings } from '../booking-helpers.js';
-import { escapeHtml, getActiveClients, isAdmin, isDateKey, parseCommaList } from '../utils.js';
-import { uiAlert, uiPrompt } from '../ui.js';
+import { buildRepeatDates, promptForBookingDetails } from '../booking-helpers.js';
+import { escapeHtml, getActiveClients, isAdmin } from '../utils.js';
+import { showModal, uiAlert, uiConfirm } from '../ui.js';
 
 export function renderClients() {
   if (!isAdmin()) {
@@ -36,18 +36,57 @@ export function renderClients() {
 }
 
 export async function promptForClientDetails() {
-  const name = await uiPrompt('Client name:', '', { label: 'Name' });
-  if (!name) return null;
+  const result = await showModal({
+    title: 'Add New Client',
+    message: 'Enter the client details once, then choose whether to schedule them.',
+    confirmText: 'Save Client',
+    fields: [
+      { name: 'name', label: 'Client name', type: 'text', required: true },
+      {
+        name: 'type',
+        label: 'Client type',
+        type: 'select',
+        value: 'house',
+        required: true,
+        options: [
+          { value: 'house', label: 'House' },
+          { value: 'office', label: 'Office' }
+        ]
+      },
+      { name: 'phone', label: 'Phone', type: 'tel' },
+      { name: 'email', label: 'Email', type: 'email' },
+      { name: 'address', label: 'Address', type: 'text' },
+      { name: 'notes', label: 'Notes', type: 'textarea' },
+      {
+        name: 'weeklyRate',
+        label: 'Weekly invoice rate',
+        type: 'number',
+        value: '120',
+        min: '0',
+        step: '0.01',
+        required: true
+      }
+    ]
+  });
 
-  const type = (await uiPrompt('Client type (house/office):', 'house', { label: 'Type' })) || 'house';
-  const phone = (await uiPrompt('Phone (optional):', '', { label: 'Phone' })) || '';
-  const email = (await uiPrompt('Email (optional):', '', { label: 'Email' })) || '';
-  const address = (await uiPrompt('Address (optional):', '', { label: 'Address' })) || '';
-  const notes = (await uiPrompt('Notes (optional):', '', { label: 'Notes' })) || '';
-  const weeklyRateRaw = (await uiPrompt('Weekly invoice rate for cleaned visits:', '120', { label: 'Weekly rate' })) || '120';
-  const weeklyRate = Number(weeklyRateRaw) || 120;
+  if (!result.confirmed) return null;
 
-  return { name, type, phone, email, address, notes, weeklyRate };
+  const name = result.values.name.trim();
+  if (!name) {
+    await uiAlert('Client name is required.');
+    return promptForClientDetails();
+  }
+
+  const weeklyRate = Number(result.values.weeklyRate) || 120;
+  return {
+    name,
+    type: result.values.type,
+    phone: result.values.phone.trim(),
+    email: result.values.email.trim(),
+    address: result.values.address.trim(),
+    notes: result.values.notes.trim(),
+    weeklyRate
+  };
 }
 
 export async function createClientRecord(clientInput) {
@@ -58,40 +97,25 @@ export async function createClientRecord(clientInput) {
 }
 
 export async function scheduleForClient(client) {
-  const shouldSchedule = await uiPrompt('Add booking for this client now? (yes/no)', 'yes', {
-    label: 'Answer'
-  });
-  if (!shouldSchedule || shouldSchedule.toLowerCase() !== 'yes') return false;
+  const shouldSchedule = await uiConfirm('Add a booking for this client now?', 'Schedule Client');
+  if (!shouldSchedule) return false;
 
   let addedAny = false;
   let keepAdding = true;
 
   while (keepAdding) {
-    const date = await uiPrompt('Booking date (YYYY-MM-DD):', state.selectedDateKey, {
-      label: 'Date',
-      placeholder: 'YYYY-MM-DD'
+    const details = await promptForBookingDetails({
+      title: 'Schedule Client',
+      message: `Create a ${client.type} booking for ${client.name}.`,
+      defaultDate: state.selectedDateKey,
+      defaultType: client.type === 'office' ? 'offices' : 'houses',
+      defaultLocation: client.address || '',
+      showType: false
     });
-    if (!date) return addedAny;
-    if (!isDateKey(date)) {
-      await uiAlert('Date must be in YYYY-MM-DD format.');
-      continue;
-    }
-
-    const time = await uiPrompt('Booking time (e.g. 2:30 PM):', '', { label: 'Time' });
-    if (!time) return addedAny;
-    const location = await uiPrompt('Location:', client.address || '', { label: 'Location' });
-    if (!location) return addedAny;
-    const notes = (await uiPrompt('Notes:', 'Routine', { label: 'Notes' })) || 'Routine';
-    const assignedEmployees = parseCommaList(
-      await uiPrompt('Assigned employees (comma-separated):', '', {
-        label: 'Employees'
-      })
-    );
-    const repeat = await askRepeatSettings();
-    if (!repeat) return addedAny;
+    if (!details) return addedAny;
 
     const type = client.type === 'office' ? 'offices' : 'houses';
-    const dates = buildRepeatDates(date, repeat.repeatType, repeat.occurrences);
+    const dates = buildRepeatDates(details.date, details.repeat.repeatType, details.repeat.occurrences);
 
     for (const repeatDate of dates) {
       await api(`/api/house-office-schedule/${type}`, {
@@ -99,20 +123,17 @@ export async function scheduleForClient(client) {
         body: JSON.stringify({
           clientId: client.id,
           date: repeatDate,
-          time,
-          location,
-          notes,
-          assignedEmployees
+          time: details.time,
+          location: details.location,
+          notes: details.notes,
+          assignedEmployees: details.assignedEmployees
         })
       });
     }
 
-    state.selectedDateKey = dates[dates.length - 1] || date;
+    state.selectedDateKey = dates[dates.length - 1] || details.date;
     addedAny = true;
-    const again = await uiPrompt('Add another day/time for this client? (yes/no)', 'no', {
-      label: 'Answer'
-    });
-    keepAdding = Boolean(again && again.toLowerCase() === 'yes');
+    keepAdding = await uiConfirm('Add another day or time for this client?', 'Schedule Another Booking');
   }
 
   return addedAny;

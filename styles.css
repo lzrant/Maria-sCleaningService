@@ -637,6 +637,8 @@ tbody tr:last-child td {
 
 .ui-modal-card {
   width: min(520px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
   background: #fff;
   border-radius: 16px;
   border: 1px solid #f3d3e4;

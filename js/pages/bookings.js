@@ -1,7 +1,7 @@
 import { bookingCalendarGrid, calendarMonthLabel, selectedDateLabel, selectedDayBookings } from '../dom.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { askRepeatSettings, buildRepeatDates } from '../booking-helpers.js';
+import { buildRepeatDates, promptForBookingDetails } from '../booking-helpers.js';
 import { createClientRecord, promptForClientDetails } from './clients.js';
 import {
   addDays,
@@ -17,7 +17,6 @@ import {
   isAdmin,
   isDateKey,
   isEmployee,
-  parseCommaList,
   parseDateKey,
   toDateKey
 } from '../utils.js';
@@ -139,44 +138,30 @@ export async function uiSelectEmployees(currentSelection = []) {
 export async function addBooking() {
   if (!isAdmin()) return false;
 
-  const clientMode = await uiSelect(
-    'Choose a client option for this booking.',
-    [
-      { value: 'existing', label: 'Select existing client' },
-      { value: 'new', label: 'Add new client' },
-      { value: 'none', label: 'Booking without client' }
-    ],
-    'existing',
-    { label: 'Client option' }
+  const clients = getActiveClients().slice().sort((a, b) => a.name.localeCompare(b.name));
+  const clientChoiceOptions = [
+    ...clients.map((client) => ({
+      value: client.id,
+      label: `${client.name} (${client.type})`
+    })),
+    { value: '__new__', label: 'Add new client' },
+    { value: '__none__', label: 'Booking without client' }
+  ];
+  const clientChoice = await uiSelect(
+    'Choose who this booking is for.',
+    clientChoiceOptions,
+    clients[0]?.id || '__new__',
+    { title: 'Booking Client', label: 'Client' }
   );
-  if (clientMode === null) return false;
+  if (clientChoice === null) return false;
 
   let matchedClient = null;
 
-  if (clientMode === 'existing') {
-    const clients = getActiveClients();
-    if (!clients.length) {
-      await uiAlert('No active clients found. Add a new client first.');
-      return false;
-    }
-
-    const clientId = await uiSelect(
-      'Select a current client.',
-      clients
-        .slice()
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((client) => ({
-          value: client.id,
-          label: `${client.name} (${client.type})`
-        })),
-      clients[0].id,
-      { label: 'Client' }
-    );
-    if (clientId === null) return false;
-    matchedClient = clients.find((client) => client.id === clientId) || null;
+  if (clientChoice !== '__new__' && clientChoice !== '__none__') {
+    matchedClient = clients.find((client) => client.id === clientChoice) || null;
   }
 
-  if (clientMode === 'new') {
+  if (clientChoice === '__new__') {
     const clientInput = await promptForClientDetails();
     if (!clientInput) return false;
 
@@ -188,32 +173,18 @@ export async function addBooking() {
     }
   }
 
-  const typeRaw = await uiPrompt(
-    `Booking type: house or office?${matchedClient ? ` (auto: ${matchedClient.type})` : ''}`,
-    matchedClient ? matchedClient.type : 'house',
-    { label: 'Booking type' }
-  );
-  if (!typeRaw) return false;
-
-  const normalized = typeRaw.toLowerCase().startsWith('o') ? 'offices' : 'houses';
-  const date = await uiPrompt('Booking date (YYYY-MM-DD):', state.selectedDateKey, {
-    label: 'Date',
-    placeholder: 'YYYY-MM-DD'
+  const details = await promptForBookingDetails({
+    title: 'Booking Details',
+    message: matchedClient ? `Schedule ${matchedClient.name}.` : 'Schedule a booking without a saved client.',
+    defaultDate: state.selectedDateKey,
+    defaultType: matchedClient?.type === 'office' ? 'offices' : 'houses',
+    defaultLocation: matchedClient?.address || '',
+    showType: true
   });
-  if (!date) return false;
-  const time = await uiPrompt('Booking time (e.g. 2:30 PM):', '', { label: 'Time' });
-  if (!time) return false;
-  const location = await uiPrompt('Location:', matchedClient?.address || '', { label: 'Location' });
-  if (!location) return false;
-  const notes = (await uiPrompt('Notes:', 'Routine', { label: 'Notes' })) || 'Routine';
-  const assignedEmployees = parseCommaList(
-    await uiPrompt('Assigned employees (comma-separated):', '', {
-      label: 'Employees'
-    })
-  );
-  const repeat = await askRepeatSettings();
-  if (!repeat) return false;
-  const dates = buildRepeatDates(date, repeat.repeatType, repeat.occurrences);
+  if (!details) return false;
+
+  const normalized = details.type;
+  const dates = buildRepeatDates(details.date, details.repeat.repeatType, details.repeat.occurrences);
 
   try {
     for (const repeatDate of dates) {
@@ -223,15 +194,15 @@ export async function addBooking() {
           clientId: matchedClient?.id || null,
           clientName: matchedClient?.name || null,
           date: repeatDate,
-          time,
-          location,
-          notes,
-          assignedEmployees
+          time: details.time,
+          location: details.location,
+          notes: details.notes,
+          assignedEmployees: details.assignedEmployees
         })
       });
     }
 
-    state.selectedDateKey = dates[dates.length - 1] || date;
+    state.selectedDateKey = dates[dates.length - 1] || details.date;
     return true;
   } catch (error) {
     await uiAlert(error.message);
